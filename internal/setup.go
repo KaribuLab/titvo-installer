@@ -8,7 +8,7 @@ import (
 	"path"
 	"strings"
 
-	"github.com/BurntSushi/toml"
+	"gopkg.in/ini.v1"
 )
 
 type AWSCredentials struct {
@@ -35,10 +35,7 @@ type AWSFileCredentials struct {
 	Region  string
 }
 
-type FileCredentialsConfig map[string]map[string]string
-
 func (c *AWSFileCredentials) GetCredentials() (*AWSCredentials, error) {
-	var config FileCredentialsConfig
 	// Get user home directory
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -50,14 +47,21 @@ func (c *AWSFileCredentials) GetCredentials() (*AWSCredentials, error) {
 	if _, err := os.Stat(credentialsFile); os.IsNotExist(err) {
 		return nil, fmt.Errorf("credentials file not found: %w", err)
 	}
-	// Load credentials file
-	if _, err := toml.DecodeFile(credentialsFile, &config); err != nil {
+	// Load credentials file using INI parser
+	cfg, err := ini.Load(credentialsFile)
+	if err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
+	// Get the profile section
+	section, err := cfg.GetSection(c.Profile)
+	if err != nil {
+		return nil, fmt.Errorf("profile '%s' not found in credentials file: %w", c.Profile, err)
+	}
+
 	return &AWSCredentials{
-		AWSAccessKeyID:     config[c.Profile]["aws_access_key_id"],
-		AWSSecretAccessKey: config[c.Profile]["aws_secret_access_key"],
-		AWSSessionToken:    config[c.Profile]["aws_session_token"],
+		AWSAccessKeyID:     section.Key("aws_access_key_id").String(),
+		AWSSecretAccessKey: section.Key("aws_secret_access_key").String(),
+		AWSSessionToken:    section.Key("aws_session_token").String(),
 		AWSRegion:          c.Region,
 	}, nil
 }
