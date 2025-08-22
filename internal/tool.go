@@ -1,13 +1,9 @@
 package internal
 
 import (
-	"archive/zip"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"path"
-	"path/filepath"
 )
 
 // https://github.com/gruntwork-io/terragrunt/releases/download/v0.69.1/terragrunt_darwin_amd64
@@ -19,66 +15,6 @@ const terragruntUrl = "https://github.com/gruntwork-io/terragrunt/releases/downl
 // https://releases.hashicorp.com/terraform/1.13.0/terraform_1.13.0_windows_amd64.zip
 // https://releases.hashicorp.com/terraform/1.13.0/terraform_1.13.0_linux_amd64.zip
 const terraformUrl = "https://releases.hashicorp.com/terraform/%s/terraform_%s_%s_%s.%s"
-
-func downloadFile(url string, dir string, fileName string) error {
-	resp, err := http.Get(url)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	filePath := path.Join(dir, fileName)
-
-	out, err := os.Create(filePath)
-	if err != nil {
-		return err
-	}
-	defer out.Close()
-
-	_, err = io.Copy(out, resp.Body)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func extractZip(src, dest string) error {
-	reader, err := zip.OpenReader(src)
-	if err != nil {
-		return err
-	}
-	defer reader.Close()
-
-	for _, file := range reader.File {
-		path := filepath.Join(dest, file.Name)
-
-		// Crear directorio si es necesario
-		if file.FileInfo().IsDir() {
-			os.MkdirAll(path, file.FileInfo().Mode())
-			continue
-		}
-
-		// Crear el archivo
-		fileReader, err := file.Open()
-		if err != nil {
-			return err
-		}
-		defer fileReader.Close()
-
-		targetFile, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, file.FileInfo().Mode())
-		if err != nil {
-			return err
-		}
-		defer targetFile.Close()
-
-		_, err = io.Copy(targetFile, fileReader)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
 
 func DownloadTerragrunt(dir string, version string, osType OS, arch Arch) error {
 	url := fmt.Sprintf(terragruntUrl, version, osType, arch)
@@ -140,36 +76,44 @@ func DownloadTerraform(dir string, version string, osType OS, arch Arch) error {
 }
 
 type InstallToolConfig struct {
-	Dir  string
-	OS   OS
-	Arch Arch
+	Dir      string
+	OS       OS
+	Arch     Arch
+	TitvoDir string
 }
 
-func InstallTools() error {
+func InstallTools() (error, InstallToolConfig) {
 	// Get home directory
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return err
+		return err, InstallToolConfig{}
 	}
-	binDir := path.Join(home, ".titvo", "bin")
+	titvoDir := path.Join(home, ".titvo")
+	binDir := path.Join(titvoDir, "bin")
+	fmt.Printf("Installing Tools in %s\n", binDir)
 	if err := os.MkdirAll(binDir, 0755); err != nil {
-		return err
+		return err, InstallToolConfig{}
 	}
 	os, err := GetOS()
 	if err != nil {
-		return err
+		return err, InstallToolConfig{}
 	}
 	arch, err := GetArch()
 	if err != nil {
-		return err
+		return err, InstallToolConfig{}
 	}
 	err = DownloadTerragrunt(binDir, "0.69.1", os, arch)
 	if err != nil {
-		return err
+		return err, InstallToolConfig{}
 	}
 	err = DownloadTerraform(binDir, "1.9.8", os, arch)
 	if err != nil {
-		return err
+		return err, InstallToolConfig{}
 	}
-	return nil
+	return nil, InstallToolConfig{
+		Dir:      binDir,
+		OS:       os,
+		Arch:     arch,
+		TitvoDir: titvoDir,
+	}
 }

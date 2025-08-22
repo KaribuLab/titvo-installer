@@ -15,7 +15,7 @@ func RunInstaller(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 	fmt.Println("Credentials setup successfully")
-	err = InstallTools()
+	err, _ = InstallTools()
 	if err != nil {
 		fmt.Println("Failed to install tools", err)
 		os.Exit(1)
