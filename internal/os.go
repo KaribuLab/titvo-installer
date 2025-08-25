@@ -2,6 +2,7 @@ package internal
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"runtime"
 )
@@ -59,7 +60,7 @@ func IsLinux() bool {
 
 type ExecuteOptions struct {
 	WorkingDir string
-	Env        []string
+	Env        map[string]string // Variables específicas para esta ejecución
 }
 
 func Execute(command string, args ...string) (string, error) {
@@ -74,13 +75,27 @@ func ExecuteWithOptions(command string, options *ExecuteOptions, args ...string)
 			cmd.Dir = options.WorkingDir
 		}
 		if options.Env != nil {
-			cmd.Env = options.Env
+			// Comenzar con el entorno actual del proceso
+			env := os.Environ()
+			// Agregar/sobrescribir las variables específicas
+			for key, value := range options.Env {
+				env = append(env, fmt.Sprintf("%s=%s", key, value))
+			}
+			cmd.Env = env
 		}
 	}
 
+	// CombinedOutput captura stdout y stderr juntos
 	output, err := cmd.CombinedOutput()
+	outputStr := string(output)
+
+	// Si hay error, incluir la salida en el mensaje de error
 	if err != nil {
-		return "", err
+		if outputStr != "" {
+			return outputStr, fmt.Errorf("command failed with exit code %v: %s", err, outputStr)
+		}
+		return outputStr, fmt.Errorf("command failed: %v", err)
 	}
-	return string(output), nil
+
+	return outputStr, nil
 }

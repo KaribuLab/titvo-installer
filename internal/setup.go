@@ -68,10 +68,18 @@ func (c *AWSFileCredentials) GetCredentials() (*AWSCredentials, error) {
 
 type SetupCredentialsConfig struct {
 	AWSCredentialsLookup AWSCredentialsLookup
+	TerraformStateBucket string
 }
 
 func SetupCredentials() (err error, config *SetupCredentialsConfig) {
 	fmt.Println("Setting up Titvo Installer")
+	fmt.Println("Terraform state bucket name:")
+	terraformStateBucket, err := bufio.NewReader(os.Stdin).ReadString('\n')
+	if err != nil {
+		fmt.Println("Failed to read Terraform state bucket name", err)
+		os.Exit(1)
+	}
+	terraformStateBucket = strings.TrimSpace(terraformStateBucket)
 	var awsRegion string
 	fmt.Println("Enter your AWS Region:")
 	awsRegion, err = bufio.NewReader(os.Stdin).ReadString('\n')
@@ -116,6 +124,7 @@ func SetupCredentials() (err error, config *SetupCredentialsConfig) {
 		}
 		awsSessionToken = strings.TrimSpace(awsSessionToken)
 		return nil, &SetupCredentialsConfig{
+			TerraformStateBucket: terraformStateBucket,
 			AWSCredentialsLookup: &InputCredential{
 				AWSCredentials: AWSCredentials{
 					AWSAccessKeyID:     awsAccessKeyID,
@@ -134,6 +143,7 @@ func SetupCredentials() (err error, config *SetupCredentialsConfig) {
 		}
 		profile = strings.TrimSpace(profile)
 		return nil, &SetupCredentialsConfig{
+			TerraformStateBucket: terraformStateBucket,
 			AWSCredentialsLookup: &AWSFileCredentials{
 				Profile: profile,
 				Region:  strings.TrimSpace(awsRegion),
