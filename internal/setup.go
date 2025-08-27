@@ -8,6 +8,7 @@ import (
 	"path"
 	"strings"
 
+	"golang.org/x/term"
 	"gopkg.in/ini.v1"
 )
 
@@ -106,26 +107,26 @@ func SetupInstallation() (err error, config *SetupConfig) {
 		var awsSecretAccessKey string
 		var awsSessionToken string
 		fmt.Println("Enter your AWS Access Key ID:")
-		awsAccessKeyID, err = bufio.NewReader(os.Stdin).ReadString('\n')
+		accessKeyBytes, err := term.ReadPassword(int(os.Stdin.Fd()))
 		if err != nil {
 			fmt.Println("Failed to read AWS Access Key ID", err)
 			os.Exit(1)
 		}
-		awsAccessKeyID = strings.TrimSpace(awsAccessKeyID)
+		awsAccessKeyID = strings.TrimSpace(string(accessKeyBytes))
 		fmt.Println("Enter your AWS Secret Access Key:")
-		awsSecretAccessKey, err = bufio.NewReader(os.Stdin).ReadString('\n')
+		secretKeyBytes, err := term.ReadPassword(int(os.Stdin.Fd()))
 		if err != nil {
 			fmt.Println("Failed to read AWS Secret Access Key", err)
 			os.Exit(1)
 		}
-		awsSecretAccessKey = strings.TrimSpace(awsSecretAccessKey)
+		awsSecretAccessKey = strings.TrimSpace(string(secretKeyBytes))
 		fmt.Println("Enter your AWS Session Token:")
-		awsSessionToken, err = bufio.NewReader(os.Stdin).ReadString('\n')
+		sessionTokenBytes, err := term.ReadPassword(int(os.Stdin.Fd()))
 		if err != nil {
 			fmt.Println("Failed to read AWS Session Token", err)
 			os.Exit(1)
 		}
-		awsSessionToken = strings.TrimSpace(awsSessionToken)
+		awsSessionToken = strings.TrimSpace(string(sessionTokenBytes))
 		fmt.Println("Enter your VPC ID:")
 		vpcID, err := bufio.NewReader(os.Stdin).ReadString('\n')
 		if err != nil {
@@ -141,12 +142,11 @@ func SetupInstallation() (err error, config *SetupConfig) {
 		}
 		subnetID = strings.TrimSpace(subnetID)
 		fmt.Println("Enter your AES Secret:")
-		aesSecret, err := bufio.NewReader(os.Stdin).ReadString('\n')
+		aesSecret, err := term.ReadPassword(int(os.Stdin.Fd()))
 		if err != nil {
 			fmt.Println("Failed to read AES Secret", err)
 			os.Exit(1)
 		}
-		aesSecret = strings.TrimSpace(aesSecret)
 		return nil, &SetupConfig{
 			TerraformStateBucket: terraformStateBucket,
 			AWSCredentialsLookup: &InputCredential{
@@ -159,7 +159,7 @@ func SetupInstallation() (err error, config *SetupConfig) {
 			},
 			VPCID:     vpcID,
 			SubnetID:  subnetID,
-			AesSecret: aesSecret,
+			AesSecret: string(aesSecret),
 		}
 	case "2":
 		fmt.Println("Enter your AWS Profile:")
@@ -184,12 +184,11 @@ func SetupInstallation() (err error, config *SetupConfig) {
 		}
 		subnetID = strings.TrimSpace(subnetID)
 		fmt.Println("Enter your AES Secret:")
-		aesSecret, err := bufio.NewReader(os.Stdin).ReadString('\n')
+		aesSecret, err := term.ReadPassword(int(os.Stdin.Fd()))
 		if err != nil {
 			fmt.Println("Failed to read AES Secret", err)
 			os.Exit(1)
 		}
-		aesSecret = strings.TrimSpace(aesSecret)
 		return nil, &SetupConfig{
 			TerraformStateBucket: terraformStateBucket,
 			AWSCredentialsLookup: &AWSFileCredentials{
@@ -198,7 +197,7 @@ func SetupInstallation() (err error, config *SetupConfig) {
 			},
 			VPCID:     vpcID,
 			SubnetID:  subnetID,
-			AesSecret: aesSecret,
+			AesSecret: string(aesSecret),
 		}
 	default:
 		slog.Error("Invalid choice", "error", err)

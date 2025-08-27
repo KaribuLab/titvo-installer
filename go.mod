@@ -7,7 +7,12 @@ require (
 	gopkg.in/ini.v1 v1.67.0
 )
 
-require github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.39.1
+require (
+	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.39.1
+	golang.org/x/term v0.34.0
+)
+
+require golang.org/x/sys v0.35.0 // indirect
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.38.2
