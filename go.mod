@@ -7,12 +7,12 @@ require (
 	gopkg.in/ini.v1 v1.67.0
 )
 
-require github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.39.1 // indirect
+require github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.39.1
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.38.2
 	github.com/aws/aws-sdk-go-v2/config v1.31.4
-	github.com/aws/aws-sdk-go-v2/credentials v1.18.8 // indirect
+	github.com/aws/aws-sdk-go-v2/credentials v1.18.8
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.18.5 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.5 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.5 // indirect
