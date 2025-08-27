@@ -24,7 +24,7 @@ func DownloadInfraSource(dir string) error {
 	return nil
 }
 
-func DeployInfra(credentials AWSCredentials, config InstallToolConfig, terraformStateBucket string) error {
+func DeployInfra(credentials AWSCredentials, config InstallToolConfig, terraformStateBucket string, vpcID string, subnetID string, aesSecret string) error {
 	infraDir := path.Join(config.TitvoDir, "infra")
 	err := os.MkdirAll(infraDir, 0755)
 	if err != nil {
@@ -51,11 +51,29 @@ func DeployInfra(credentials AWSCredentials, config InstallToolConfig, terraform
 		"BUCKET_STATE_NAME":     terraformStateBucket,
 		"PATH":                  newPathEnv,
 	}
+
 	if credentials.AWSSessionToken != "" {
 		env["AWS_SESSION_TOKEN"] = credentials.AWSSessionToken
 	}
 
-	fmt.Println("Executing terragrunt init")
+	fmt.Println("Setting up parameters")
+	err = PutParameter(&credentials, "/tvo/security-scan/prod/infra/vpc-id", vpcID)
+	if err != nil {
+		return fmt.Errorf("failed to put parameter vpc-id: %w", err)
+	}
+	err = PutParameter(&credentials, "/tvo/security-scan/prod/infra/subnet1", subnetID)
+	if err != nil {
+		return fmt.Errorf("failed to put parameter subnet1: %w", err)
+	}
+	err = CreateSecret(&credentials, "/tvo/security-scan/prod/aes_secret", aesSecret)
+	if err != nil {
+		return fmt.Errorf("failed to create secret aes_secret: %w", err)
+	}
+	err = PutParameter(&credentials, "/tvo/security-scan/prod/infra/encryption-key-name", "/tvo/security-scan/prod/aes_secret")
+	if err != nil {
+		return fmt.Errorf("failed to put parameter encryption-key-name: %w", err)
+	}
+	fmt.Println("Executing terragrunt init base infra")
 	output, err := ExecuteWithOptions("terragrunt", &ExecuteOptions{
 		WorkingDir: prodDir,
 		Env:        env,
@@ -64,7 +82,7 @@ func DeployInfra(credentials AWSCredentials, config InstallToolConfig, terraform
 	if err != nil {
 		return fmt.Errorf("terragrunt init failed: %w", err)
 	}
-	fmt.Println("Executing terragrunt plan")
+	fmt.Println("Executing terragrunt plan base infra")
 	output, err = ExecuteWithOptions("terragrunt", &ExecuteOptions{
 		WorkingDir: prodDir,
 		Env:        env,
@@ -73,7 +91,7 @@ func DeployInfra(credentials AWSCredentials, config InstallToolConfig, terraform
 	if err != nil {
 		return fmt.Errorf("terragrunt plan failed: %w", err)
 	}
-	fmt.Println("Executing terragrunt apply")
+	fmt.Println("Executing terragrunt apply base infra")
 	output, err = ExecuteWithOptions("terragrunt", &ExecuteOptions{
 		WorkingDir: prodDir,
 		Env:        env,
