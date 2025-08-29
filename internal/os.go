@@ -63,12 +63,16 @@ type ExecuteOptions struct {
 	Env        map[string]string // Variables específicas para esta ejecución
 }
 
-func Execute(command string, args ...string) (string, error) {
+func Execute(command string, args ...string) error {
 	return ExecuteWithOptions(command, nil, args...)
 }
 
-func ExecuteWithOptions(command string, options *ExecuteOptions, args ...string) (string, error) {
+func ExecuteWithOptions(command string, options *ExecuteOptions, args ...string) error {
 	cmd := exec.Command(command, args...)
+
+	// Siempre redirigir a stdout/stderr para output en vivo
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
 
 	if options != nil {
 		if options.WorkingDir != "" {
@@ -85,17 +89,10 @@ func ExecuteWithOptions(command string, options *ExecuteOptions, args ...string)
 		}
 	}
 
-	// CombinedOutput captura stdout y stderr juntos
-	output, err := cmd.CombinedOutput()
-	outputStr := string(output)
-
-	// Si hay error, incluir la salida en el mensaje de error
+	err := cmd.Run()
 	if err != nil {
-		if outputStr != "" {
-			return outputStr, fmt.Errorf("command failed with exit code %v: %s", err, outputStr)
-		}
-		return outputStr, fmt.Errorf("command failed: %v", err)
+		return fmt.Errorf("command failed: %v", err)
 	}
 
-	return outputStr, nil
+	return nil
 }

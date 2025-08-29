@@ -27,7 +27,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssm v1.64.1
 	github.com/aws/aws-sdk-go-v2/service/sso v1.28.3 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.34.1 // indirect
-	github.com/aws/aws-sdk-go-v2/service/sts v1.38.1 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sts v1.38.1
 	github.com/aws/smithy-go v1.23.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/spf13/pflag v1.0.6 // indirect

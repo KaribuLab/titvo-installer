@@ -6,117 +6,99 @@ import (
 	"path"
 )
 
-const titvoInfraSource = "https://github.com/KaribuLab/titvo-security-scan-infra-aws/archive/refs/heads/main.zip"
-const titvoSecurityScanInfraSource = "https://github.com/KaribuLab/titvo-security-scan/archive/refs/heads/main.zip"
-const titvoAuthSetupSource = "https://github.com/KaribuLab/titvo-auth-setup-aws/archive/refs/heads/main.zip"
-const titvoTaskCliFilesSource = "https://github.com/KaribuLab/titvo-task-cli-files-aws/archive/refs/heads/main.zip"
-const titvoTaskTriggerSource = "https://github.com/KaribuLab/titvo-task-trigger-aws/archive/refs/heads/main.zip"
-const titvoTaskStatusSource = "https://github.com/KaribuLab/titvo-task-status-aws/archive/refs/heads/main.zip"
+const titvoInfraSource = "https://github.com/KaribuLab/titvo-security-scan-infra-aws.git"
+const titvoSecurityScanInfraSource = "https://github.com/KaribuLab/titvo-security-scan.git"
+const titvoAuthSetupSource = "https://github.com/KaribuLab/titvo-auth-setup-aws.git"
+const titvoTaskCliFilesSource = "https://github.com/KaribuLab/titvo-task-cli-files-aws.git"
+const titvoTaskTriggerSource = "https://github.com/KaribuLab/titvo-task-trigger-aws.git"
+const titvoTaskStatusSource = "https://github.com/KaribuLab/titvo-task-status-aws.git"
 
 func DownloadInfraSource(dir string) error {
-	fileName := "titvo-security-scan-infra-aws.zip"
-	err := downloadFile(titvoInfraSource, dir, fileName)
-	fmt.Println("Downloaded infra from ", titvoInfraSource, " to ", path.Join(dir, fileName))
+	err := ExecuteWithOptions("git", &ExecuteOptions{
+		WorkingDir: dir,
+	}, "clone", titvoInfraSource)
+	fmt.Println("Downloaded infra from ", titvoInfraSource, " to ", dir)
 	if err != nil {
 		return err
 	}
-	err = extractZip(path.Join(dir, fileName), dir)
-	fmt.Println("Extracted infra from ", path.Join(dir, fileName), " to ", dir)
-	if err != nil {
-		return err
-	}
-	os.Remove(path.Join(dir, fileName))
 	return nil
 }
 
 func DownloadSecurityScanInfraSource(dir string) error {
-	fileName := "titvo-security-scan.zip"
-	err := downloadFile(titvoSecurityScanInfraSource, dir, fileName)
-	fmt.Println("Downloaded security scan infra from ", titvoSecurityScanInfraSource, " to ", path.Join(dir, fileName))
+	err := ExecuteWithOptions("git", &ExecuteOptions{
+		WorkingDir: dir,
+	}, "clone", titvoSecurityScanInfraSource)
+	fmt.Println("Downloaded security scan infra from ", titvoSecurityScanInfraSource, " to ", dir)
 	if err != nil {
 		return err
 	}
-	err = extractZip(path.Join(dir, fileName), dir)
-	fmt.Println("Extracted security scan infra from ", path.Join(dir, fileName), " to ", dir)
-	if err != nil {
-		return err
-	}
-	os.Remove(path.Join(dir, fileName))
 	return nil
 }
 
 func DownloadAuthSetupSource(dir string) error {
-	fileName := "titvo-auth-setup.zip"
-	err := downloadFile(titvoAuthSetupSource, dir, fileName)
-	fmt.Println("Downloaded auth setup from ", titvoAuthSetupSource, " to ", path.Join(dir, fileName))
+	err := ExecuteWithOptions("git", &ExecuteOptions{
+		WorkingDir: dir,
+	}, "clone", titvoAuthSetupSource)
+	fmt.Println("Downloaded auth setup from ", titvoAuthSetupSource, " to ", dir)
 	if err != nil {
 		return err
 	}
-	err = extractZip(path.Join(dir, fileName), dir)
-	fmt.Println("Extracted auth setup from ", path.Join(dir, fileName), " to ", dir)
-	if err != nil {
-		return err
-	}
-	os.Remove(path.Join(dir, fileName))
 	return nil
 }
 
 func DownloadTaskCliFilesSource(dir string) error {
-	fileName := "titvo-task-cli-files.zip"
-	err := downloadFile(titvoTaskCliFilesSource, dir, fileName)
-	fmt.Println("Downloaded task cli files from ", titvoTaskCliFilesSource, " to ", path.Join(dir, fileName))
+	err := ExecuteWithOptions("git", &ExecuteOptions{
+		WorkingDir: dir,
+	}, "clone", titvoTaskCliFilesSource)
+	fmt.Println("Downloaded task cli files from ", titvoTaskCliFilesSource, " to ", dir)
 	if err != nil {
 		return err
 	}
-	err = extractZip(path.Join(dir, fileName), dir)
-	fmt.Println("Extracted task cli files from ", path.Join(dir, fileName), " to ", dir)
-	if err != nil {
-		return err
-	}
-	os.Remove(path.Join(dir, fileName))
 	return nil
 }
 
 func DownloadTaskTriggerSource(dir string) error {
-	fileName := "titvo-task-trigger.zip"
-	err := downloadFile(titvoTaskTriggerSource, dir, fileName)
-	fmt.Println("Downloaded task trigger from ", titvoTaskTriggerSource, " to ", path.Join(dir, fileName))
+	err := ExecuteWithOptions("git", &ExecuteOptions{
+		WorkingDir: dir,
+	}, "clone", titvoTaskTriggerSource)
+	fmt.Println("Downloaded task trigger from ", titvoTaskTriggerSource, " to ", dir)
 	if err != nil {
 		return err
 	}
-	err = extractZip(path.Join(dir, fileName), dir)
-	fmt.Println("Extracted task trigger from ", path.Join(dir, fileName), " to ", dir)
-	if err != nil {
-		return err
-	}
-	os.Remove(path.Join(dir, fileName))
 	return nil
 }
 
 func DownloadTaskStatusSource(dir string) error {
-	fileName := "titvo-task-status.zip"
-	err := downloadFile(titvoTaskStatusSource, dir, fileName)
-	fmt.Println("Downloaded task status from ", titvoTaskStatusSource, " to ", path.Join(dir, fileName))
+	err := ExecuteWithOptions("git", &ExecuteOptions{
+		WorkingDir: dir,
+	}, "clone", titvoTaskStatusSource)
+	fmt.Println("Downloaded task status from ", titvoTaskStatusSource, " to ", dir)
 	if err != nil {
 		return err
 	}
-	err = extractZip(path.Join(dir, fileName), dir)
-	fmt.Println("Extracted task status from ", path.Join(dir, fileName), " to ", dir)
-	if err != nil {
-		return err
-	}
-	os.Remove(path.Join(dir, fileName))
 	return nil
 }
 
-func DeployInfra(credentials AWSCredentials, config InstallToolConfig, terraformStateBucket string, vpcID string, subnetID string, aesSecret string) error {
-	infraDir := path.Join(config.TitvoDir, "infra")
+type DeployConfig struct {
+	AWSCredentials    AWSCredentials
+	InstallToolConfig InstallToolConfig
+	VPCID             string
+	SubnetID          string
+	AESSecret         string
+	Debug             bool
+}
+
+func DeployInfra(config DeployConfig) error {
+	infraDir := path.Join(config.InstallToolConfig.TitvoDir, "infra")
 	err := os.MkdirAll(infraDir, 0755)
 	if err != nil {
 		return err
 	}
-	DownloadInfraSource(infraDir)
-	sourceDir := path.Join(infraDir, "titvo-security-scan-infra-aws-main")
+	err = DownloadInfraSource(infraDir)
+	if err != nil {
+		return fmt.Errorf("failed to download infra: %w", err)
+	}
+	sourceDir := path.Join(infraDir, "titvo-security-scan-infra-aws")
 	if _, err := os.Stat(sourceDir); os.IsNotExist(err) {
 		return fmt.Errorf("source directory %s does not exist", sourceDir)
 	}
@@ -124,192 +106,287 @@ func DeployInfra(credentials AWSCredentials, config InstallToolConfig, terraform
 	fmt.Println("Deploying infra to ", prodDir)
 	currentPathEnv := os.Getenv("PATH")
 	var newPathEnv string
-	if config.OS == Windows {
-		newPathEnv = fmt.Sprintf("%s;%s", currentPathEnv, path.Join(config.TitvoDir, "bin"))
+	if config.InstallToolConfig.OS == Windows {
+		newPathEnv = fmt.Sprintf("%s;%s;%s;%s", currentPathEnv, config.InstallToolConfig.TerraformBinDir, config.InstallToolConfig.TerragruntBinDir, config.InstallToolConfig.NodeBinDir)
 	} else {
-		newPathEnv = fmt.Sprintf("%s:%s", currentPathEnv, path.Join(config.TitvoDir, "bin"))
+		newPathEnv = fmt.Sprintf("%s:%s:%s:%s", currentPathEnv, config.InstallToolConfig.TerraformBinDir, config.InstallToolConfig.TerragruntBinDir, config.InstallToolConfig.NodeBinDir)
 	}
+	// Crear directorio para cache de plugins de Terraform
+	pluginCacheDir := path.Join(config.InstallToolConfig.TitvoDir, "terraform-plugins")
+	err = os.MkdirAll(pluginCacheDir, 0755)
+	if err != nil {
+		return fmt.Errorf("failed to create plugin cache directory: %w", err)
+	}
+
+	// Obtener Account ID de AWS
+	accountID, err := GetAccountID(&config.AWSCredentials)
+	if err != nil {
+		return fmt.Errorf("failed to get AWS account ID: %w", err)
+	}
+
 	env := map[string]string{
-		"AWS_ACCESS_KEY_ID":     credentials.AWSAccessKeyID,
-		"AWS_SECRET_ACCESS_KEY": credentials.AWSSecretAccessKey,
-		"AWS_REGION":            credentials.AWSRegion,
-		"BUCKET_STATE_NAME":     terraformStateBucket,
+		"AWS_ACCESS_KEY_ID":     config.AWSCredentials.AWSAccessKeyID,
+		"AWS_SECRET_ACCESS_KEY": config.AWSCredentials.AWSSecretAccessKey,
+		"AWS_REGION":            config.AWSCredentials.AWSRegion,
+		"AWS_ACCOUNT_ID":        accountID,
+		"TG_PLUGIN_CACHE_DIR":   pluginCacheDir,
 		"AWS_STAGE":             "prod",
 		"PATH":                  newPathEnv,
 	}
 
-	if credentials.AWSSessionToken != "" {
-		env["AWS_SESSION_TOKEN"] = credentials.AWSSessionToken
+	if config.Debug {
+		env["TG_LOG"] = "debug"
+		env["TF_LOG"] = "DEBUG"
+	}
+
+	if config.AWSCredentials.AWSSessionToken != "" {
+		env["AWS_SESSION_TOKEN"] = config.AWSCredentials.AWSSessionToken
 	}
 
 	fmt.Println("Setting up parameters")
-	err = PutParameter(&credentials, "/tvo/security-scan/prod/infra/vpc-id", vpcID)
+	err = PutParameter(&config.AWSCredentials, "/tvo/security-scan/prod/infra/vpc-id", config.VPCID)
 	if err != nil {
 		return fmt.Errorf("failed to put parameter vpc-id: %w", err)
 	}
-	err = PutParameter(&credentials, "/tvo/security-scan/prod/infra/subnet1", subnetID)
+	err = PutParameter(&config.AWSCredentials, "/tvo/security-scan/prod/infra/subnet1", config.SubnetID)
 	if err != nil {
 		return fmt.Errorf("failed to put parameter subnet1: %w", err)
 	}
-	err = CreateSecret(&credentials, "/tvo/security-scan/prod/aes_secret", aesSecret)
+	secretARN, err := CreateSecret(&config.AWSCredentials, "/tvo/security-scan/prod/aes_secret", config.AESSecret)
 	if err != nil {
 		return fmt.Errorf("failed to create secret aes_secret: %w", err)
 	}
-	err = PutParameter(&credentials, "/tvo/security-scan/prod/infra/encryption-key-name", "/tvo/security-scan/prod/aes_secret")
+	err = PutParameter(&config.AWSCredentials, "/tvo/security-scan/prod/infra/encryption-key-name", "/tvo/security-scan/prod/aes_secret")
 	if err != nil {
 		return fmt.Errorf("failed to put parameter encryption-key-name: %w", err)
 	}
-	fmt.Println("Executing terragrunt init base infra")
-	output, err := ExecuteWithOptions("terragrunt", &ExecuteOptions{
-		WorkingDir: prodDir,
-		Env:        env,
-	}, "run-all", "init", "--terragrunt-non-interactive")
-	fmt.Println("Init output:", output)
+	err = PutParameter(&config.AWSCredentials, "/tvo/security-scan/prod/infra/secret-manager-arn", secretARN)
 	if err != nil {
-		return fmt.Errorf("terragrunt init failed: %w", err)
+		return fmt.Errorf("failed to put parameter encryption-key-arn: %w", err)
 	}
-	fmt.Println("Executing terragrunt plan base infra")
-	output, err = ExecuteWithOptions("terragrunt", &ExecuteOptions{
-		WorkingDir: prodDir,
-		Env:        env,
-	}, "run-all", "plan", "--terragrunt-non-interactive")
-	fmt.Println("Plan output:", output)
-	if err != nil {
-		return fmt.Errorf("terragrunt plan failed: %w", err)
-	}
+	// NOTE: Base Infra
 	fmt.Println("Executing terragrunt apply base infra")
-	output, err = ExecuteWithOptions("terragrunt", &ExecuteOptions{
+	err = ExecuteWithOptions("terragrunt", &ExecuteOptions{
 		WorkingDir: prodDir,
 		Env:        env,
 	}, "run-all", "apply", "-input=false", "-auto-approve", "--terragrunt-non-interactive")
-	fmt.Println("Apply output:", output)
 	if err != nil {
 		return fmt.Errorf("terragrunt apply failed: %w", err)
 	}
-	DownloadSecurityScanInfraSource(path.Join(config.TitvoDir, "security-scan"))
-	securityScanDir := path.Join(config.TitvoDir, "security-scan", "titvo-security-scan-main")
-	if _, err := os.Stat(securityScanDir); os.IsNotExist(err) {
-		return fmt.Errorf("security scan directory %s does not exist", securityScanDir)
+	err = DownloadSecurityScanInfraSource(infraDir)
+	if err != nil {
+		return fmt.Errorf("failed to download security scan infra: %w", err)
 	}
-	prodDir = path.Join(securityScanDir, "aws")
+	// NOTE: Security Scan
+	sourceDir = path.Join(infraDir, "titvo-security-scan")
+	if _, err := os.Stat(sourceDir); os.IsNotExist(err) {
+		return fmt.Errorf("security scan directory %s does not exist", sourceDir)
+	}
+	prodDir = path.Join(sourceDir, "aws")
 	fmt.Println("Deploying security scan to ", prodDir)
-	fmt.Println("Executing terragrunt init security scan")
-	output, err = ExecuteWithOptions("terragrunt", &ExecuteOptions{
-		WorkingDir: prodDir,
-		Env:        env,
-	}, "run-all", "init", "--terragrunt-non-interactive")
-	fmt.Println("Security scan init output:", output)
-	fmt.Println("Executing terragrunt plan security scan")
-	output, err = ExecuteWithOptions("terragrunt", &ExecuteOptions{
-		WorkingDir: prodDir,
-		Env:        env,
-	}, "run-all", "plan", "--terragrunt-non-interactive")
-	fmt.Println("Security scan plan output:", output)
 	fmt.Println("Executing terragrunt apply security scan")
-	output, err = ExecuteWithOptions("terragrunt", &ExecuteOptions{
+	err = ExecuteWithOptions("terragrunt", &ExecuteOptions{
 		WorkingDir: prodDir,
 		Env:        env,
 	}, "run-all", "apply", "-input=false", "-auto-approve", "--terragrunt-non-interactive")
-	fmt.Println("Security scan apply output:", output)
-	DownloadAuthSetupSource(path.Join(config.TitvoDir, "auth-setup"))
-	authSetupDir := path.Join(config.TitvoDir, "auth-setup", "titvo-auth-setup-aws-main")
-	if _, err := os.Stat(authSetupDir); os.IsNotExist(err) {
-		return fmt.Errorf("auth setup directory %s does not exist", authSetupDir)
+	if err != nil {
+		return fmt.Errorf("terragrunt apply security scan failed: %w", err)
 	}
-	prodDir = path.Join(authSetupDir, "aws")
+	// NOTE: Auth Setup
+	err = DownloadAuthSetupSource(infraDir)
+	if err != nil {
+		return fmt.Errorf("failed to download auth setup: %w", err)
+	}
+	sourceDir = path.Join(infraDir, "titvo-auth-setup-aws")
+	if _, err := os.Stat(sourceDir); os.IsNotExist(err) {
+		return fmt.Errorf("auth setup directory %s does not exist", sourceDir)
+	}
+	prodDir = path.Join(sourceDir, "aws")
 	fmt.Println("Deploying auth setup to ", prodDir)
-	fmt.Println("Executing terragrunt init auth setup")
-	output, err = ExecuteWithOptions("terragrunt", &ExecuteOptions{
-		WorkingDir: prodDir,
-		Env:        env,
-	}, "run-all", "init", "--terragrunt-non-interactive")
-	fmt.Println("Auth setup init output:", output)
-	fmt.Println("Executing terragrunt plan auth setup")
-	output, err = ExecuteWithOptions("terragrunt", &ExecuteOptions{
-		WorkingDir: prodDir,
-		Env:        env,
-	}, "run-all", "plan", "--terragrunt-non-interactive")
-	fmt.Println("Auth setup plan output:", output)
+	fmt.Println("Updating git submodules")
+	err = ExecuteWithOptions("git", &ExecuteOptions{
+		WorkingDir: sourceDir,
+	}, "submodule", "update", "--init")
+	if err != nil {
+		return fmt.Errorf("git submodule update failed: %w", err)
+	}
+	fmt.Println("Executing build with npm")
+	err = ExecuteWithOptions("npm", &ExecuteOptions{
+		WorkingDir: sourceDir,
+	}, "ci")
+	if err != nil {
+		return fmt.Errorf("npm ci failed: %w", err)
+	}
+	err = ExecuteWithOptions("npm", &ExecuteOptions{
+		WorkingDir: sourceDir,
+	}, "run", "build")
+	if err != nil {
+		return fmt.Errorf("npm run build failed: %w", err)
+	}
 	fmt.Println("Executing terragrunt apply auth setup")
-	output, err = ExecuteWithOptions("terragrunt", &ExecuteOptions{
+	err = ExecuteWithOptions("terragrunt", &ExecuteOptions{
 		WorkingDir: prodDir,
 		Env:        env,
 	}, "run-all", "apply", "-input=false", "-auto-approve", "--terragrunt-non-interactive")
-	fmt.Println("Auth setup apply output:", output)
-	DownloadTaskCliFilesSource(path.Join(config.TitvoDir, "task-cli-files"))
-	taskCliFilesDir := path.Join(config.TitvoDir, "task-cli-files", "titvo-task-cli-files-aws-main")
-	if _, err := os.Stat(taskCliFilesDir); os.IsNotExist(err) {
-		return fmt.Errorf("task cli files directory %s does not exist", taskCliFilesDir)
+	if err != nil {
+		return fmt.Errorf("terragrunt apply auth setup failed: %w", err)
 	}
-	prodDir = path.Join(taskCliFilesDir, "aws")
+	// NOTE: Task CLI Files
+	err = DownloadTaskCliFilesSource(infraDir)
+	if err != nil {
+		return fmt.Errorf("failed to download task cli files: %w", err)
+	}
+	sourceDir = path.Join(infraDir, "titvo-task-cli-files-aws")
+	if _, err := os.Stat(sourceDir); os.IsNotExist(err) {
+		return fmt.Errorf("task cli files directory %s does not exist", sourceDir)
+	}
+	prodDir = path.Join(sourceDir, "aws")
 	fmt.Println("Deploying task cli files to ", prodDir)
-	fmt.Println("Executing terragrunt init task cli files")
-	output, err = ExecuteWithOptions("terragrunt", &ExecuteOptions{
-		WorkingDir: prodDir,
-		Env:        env,
-	}, "run-all", "init", "--terragrunt-non-interactive")
-	fmt.Println("Task cli files init output:", output)
-	fmt.Println("Executing terragrunt plan task cli files")
-	output, err = ExecuteWithOptions("terragrunt", &ExecuteOptions{
-		WorkingDir: prodDir,
-		Env:        env,
-	}, "run-all", "plan", "--terragrunt-non-interactive")
-	fmt.Println("Task cli files plan output:", output)
+	fmt.Println("Updating git submodules")
+	err = ExecuteWithOptions("git", &ExecuteOptions{
+		WorkingDir: sourceDir,
+	}, "submodule", "update", "--init")
+	if err != nil {
+		return fmt.Errorf("git submodule update failed: %w", err)
+	}
+	fmt.Println("Executing build with npm")
+	err = ExecuteWithOptions("npm", &ExecuteOptions{
+		WorkingDir: sourceDir,
+	}, "ci")
+	if err != nil {
+		return fmt.Errorf("npm ci failed: %w", err)
+	}
+	err = ExecuteWithOptions("npm", &ExecuteOptions{
+		WorkingDir: sourceDir,
+	}, "run", "build")
+	if err != nil {
+		return fmt.Errorf("npm run build failed: %w", err)
+	}
+	fmt.Println("Executing build with npm")
+	err = ExecuteWithOptions("npm", &ExecuteOptions{
+		WorkingDir: sourceDir,
+	}, "ci")
+	if err != nil {
+		return fmt.Errorf("npm ci failed: %w", err)
+	}
+	err = ExecuteWithOptions("npm", &ExecuteOptions{
+		WorkingDir: sourceDir,
+	}, "run", "build")
+	if err != nil {
+		return fmt.Errorf("npm run build failed: %w", err)
+	}
 	fmt.Println("Executing terragrunt apply task cli files")
-	output, err = ExecuteWithOptions("terragrunt", &ExecuteOptions{
+	err = ExecuteWithOptions("terragrunt", &ExecuteOptions{
 		WorkingDir: prodDir,
 		Env:        env,
 	}, "run-all", "apply", "-input=false", "-auto-approve", "--terragrunt-non-interactive")
-	fmt.Println("Task cli files apply output:", output)
-	DownloadTaskTriggerSource(path.Join(config.TitvoDir, "task-trigger"))
-	taskTriggerDir := path.Join(config.TitvoDir, "task-trigger", "titvo-task-trigger-aws-main")
-	if _, err := os.Stat(taskTriggerDir); os.IsNotExist(err) {
-		return fmt.Errorf("task trigger directory %s does not exist", taskTriggerDir)
+	if err != nil {
+		return fmt.Errorf("terragrunt apply task cli files failed: %w", err)
 	}
-	prodDir = path.Join(taskTriggerDir, "aws")
+	// NOTE: Task Trigger
+	err = DownloadTaskTriggerSource(infraDir)
+	if err != nil {
+		return fmt.Errorf("failed to download task trigger: %w", err)
+	}
+	sourceDir = path.Join(infraDir, "titvo-task-trigger-aws")
+	if _, err := os.Stat(sourceDir); os.IsNotExist(err) {
+		return fmt.Errorf("task trigger directory %s does not exist", sourceDir)
+	}
+	prodDir = path.Join(sourceDir, "aws")
 	fmt.Println("Deploying task trigger to ", prodDir)
-	fmt.Println("Executing terragrunt init task trigger")
-	output, err = ExecuteWithOptions("terragrunt", &ExecuteOptions{
-		WorkingDir: prodDir,
-		Env:        env,
-	}, "run-all", "init", "--terragrunt-non-interactive")
-	fmt.Println("Task trigger init output:", output)
-	fmt.Println("Executing terragrunt plan task trigger")
-	output, err = ExecuteWithOptions("terragrunt", &ExecuteOptions{
-		WorkingDir: prodDir,
-		Env:        env,
-	}, "run-all", "plan", "--terragrunt-non-interactive")
-	fmt.Println("Task trigger plan output:", output)
-	fmt.Println("Executing terragrunt apply task trigger")
-	output, err = ExecuteWithOptions("terragrunt", &ExecuteOptions{
-		WorkingDir: prodDir,
-		Env:        env,
-	}, "run-all", "apply", "-input=false", "-auto-approve", "--terragrunt-non-interactive")
-	fmt.Println("Task trigger apply output:", output)
-	DownloadTaskStatusSource(path.Join(config.TitvoDir, "task-status"))
-	taskStatusDir := path.Join(config.TitvoDir, "task-status", "titvo-task-status-aws-main")
-	if _, err := os.Stat(taskStatusDir); os.IsNotExist(err) {
-		return fmt.Errorf("task status directory %s does not exist", taskStatusDir)
+	fmt.Println("Updating git submodules")
+	err = ExecuteWithOptions("git", &ExecuteOptions{
+		WorkingDir: sourceDir,
+	}, "submodule", "update", "--init")
+	if err != nil {
+		return fmt.Errorf("git submodule update failed: %w", err)
 	}
-	prodDir = path.Join(taskStatusDir, "aws")
-	fmt.Println("Deploying task status to ", prodDir)
-	fmt.Println("Executing terragrunt init task status")
-	output, err = ExecuteWithOptions("terragrunt", &ExecuteOptions{
-		WorkingDir: prodDir,
-		Env:        env,
-	}, "run-all", "init", "--terragrunt-non-interactive")
-	fmt.Println("Task status init output:", output)
-	fmt.Println("Executing terragrunt plan task status")
-	output, err = ExecuteWithOptions("terragrunt", &ExecuteOptions{
-		WorkingDir: prodDir,
-		Env:        env,
-	}, "run-all", "plan", "--terragrunt-non-interactive")
-	fmt.Println("Task status plan output:", output)
-	fmt.Println("Executing terragrunt apply task status")
-	output, err = ExecuteWithOptions("terragrunt", &ExecuteOptions{
+	fmt.Println("Executing build with npm")
+	err = ExecuteWithOptions("npm", &ExecuteOptions{
+		WorkingDir: sourceDir,
+	}, "ci")
+	if err != nil {
+		return fmt.Errorf("npm ci failed: %w", err)
+	}
+	err = ExecuteWithOptions("npm", &ExecuteOptions{
+		WorkingDir: sourceDir,
+	}, "run", "build")
+	if err != nil {
+		return fmt.Errorf("npm run build failed: %w", err)
+	}
+	fmt.Println("Executing build with npm")
+	err = ExecuteWithOptions("npm", &ExecuteOptions{
+		WorkingDir: sourceDir,
+	}, "ci")
+	if err != nil {
+		return fmt.Errorf("npm ci failed: %w", err)
+	}
+	err = ExecuteWithOptions("npm", &ExecuteOptions{
+		WorkingDir: sourceDir,
+	}, "run", "build")
+	if err != nil {
+		return fmt.Errorf("npm run build failed: %w", err)
+	}
+	fmt.Println("Executing terragrunt apply task trigger")
+	err = ExecuteWithOptions("terragrunt", &ExecuteOptions{
 		WorkingDir: prodDir,
 		Env:        env,
 	}, "run-all", "apply", "-input=false", "-auto-approve", "--terragrunt-non-interactive")
-	fmt.Println("Task status apply output:", output)
+	if err != nil {
+		return fmt.Errorf("terragrunt apply task trigger failed: %w", err)
+	}
+	// NOTE: Task Status
+	err = DownloadTaskStatusSource(infraDir)
+	if err != nil {
+		return fmt.Errorf("failed to download task status: %w", err)
+	}
+	sourceDir = path.Join(infraDir, "titvo-task-status-aws")
+	if _, err := os.Stat(sourceDir); os.IsNotExist(err) {
+		return fmt.Errorf("task status directory %s does not exist", sourceDir)
+	}
+	prodDir = path.Join(sourceDir, "aws")
+	fmt.Println("Deploying task status to ", prodDir)
+	fmt.Println("Updating git submodules")
+	err = ExecuteWithOptions("git", &ExecuteOptions{
+		WorkingDir: sourceDir,
+	}, "submodule", "update", "--init")
+	if err != nil {
+		return fmt.Errorf("git submodule update failed: %w", err)
+	}
+	fmt.Println("Executing build with npm")
+	err = ExecuteWithOptions("npm", &ExecuteOptions{
+		WorkingDir: sourceDir,
+	}, "ci")
+	if err != nil {
+		return fmt.Errorf("npm ci failed: %w", err)
+	}
+	err = ExecuteWithOptions("npm", &ExecuteOptions{
+		WorkingDir: sourceDir,
+	}, "run", "build")
+	if err != nil {
+		return fmt.Errorf("npm run build failed: %w", err)
+	}
+	fmt.Println("Executing build with npm")
+	err = ExecuteWithOptions("npm", &ExecuteOptions{
+		WorkingDir: sourceDir,
+	}, "ci")
+	if err != nil {
+		return fmt.Errorf("npm ci failed: %w", err)
+	}
+	err = ExecuteWithOptions("npm", &ExecuteOptions{
+		WorkingDir: sourceDir,
+	}, "run", "build")
+	if err != nil {
+		return fmt.Errorf("npm run build failed: %w", err)
+	}
+	fmt.Println("Executing terragrunt apply task status")
+	err = ExecuteWithOptions("terragrunt", &ExecuteOptions{
+		WorkingDir: prodDir,
+		Env:        env,
+	}, "run-all", "apply", "-input=false", "-auto-approve", "--terragrunt-non-interactive")
+	if err != nil {
+		return fmt.Errorf("terragrunt apply task status failed: %w", err)
+	}
+	fmt.Println("Deployed all services")
 	return nil
 }

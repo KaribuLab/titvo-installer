@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 
@@ -8,14 +9,51 @@ import (
 )
 
 func RunInstaller(cmd *cobra.Command, args []string) {
-	fmt.Println("Starting Titvo Installer")
-	err, setup := SetupInstallation()
+	debug, err := cmd.Flags().GetBool("debug")
 	if err != nil {
-		fmt.Println("Failed to setup", err)
+		fmt.Println("Failed to get debug flag", err)
 		os.Exit(1)
 	}
+	if debug {
+		fmt.Println("Debug mode enabled")
+	}
+	configFile, err := cmd.Flags().GetString("config")
+	if err != nil {
+		fmt.Println("Failed to get config flag", err)
+		os.Exit(1)
+	}
+	fmt.Println("Starting Titvo Installer")
+	var setup *SetupConfig
+	if configFile != "" {
+		fmt.Println("Using config file", configFile)
+		configFileBytes, err := os.ReadFile(configFile)
+		if err != nil {
+			fmt.Println("Failed to read config file", err)
+			os.Exit(1)
+		}
+		var setupConfigFile SetupConfigFile
+		err = json.Unmarshal(configFileBytes, &setupConfigFile)
+		if err != nil {
+			fmt.Println("Failed to unmarshal config file", err)
+			os.Exit(1)
+		}
+		setup = &SetupConfig{
+			AWSCredentialsLookup: &SetupConfigFileLookup{
+				SetupConfigFile: setupConfigFile,
+			},
+			VPCID:     setupConfigFile.VPCID,
+			SubnetID:  setupConfigFile.SubnetID,
+			AesSecret: setupConfigFile.AesSecret,
+		}
+	} else {
+		setup, err = SetupInstallation()
+		if err != nil {
+			fmt.Println("Failed to setup", err)
+			os.Exit(1)
+		}
+	}
 	fmt.Println("Setup successfully")
-	err, tool := InstallTools()
+	tool, err := InstallTools()
 	if err != nil {
 		fmt.Println("Failed to install tools", err)
 		os.Exit(1)
@@ -26,7 +64,14 @@ func RunInstaller(cmd *cobra.Command, args []string) {
 		fmt.Println("Failed to get aws setup", err)
 		os.Exit(1)
 	}
-	err = DeployInfra(*awsCredentials, tool, setup.TerraformStateBucket, setup.VPCID, setup.SubnetID, setup.AesSecret)
+	err = DeployInfra(DeployConfig{
+		AWSCredentials:    *awsCredentials,
+		InstallToolConfig: *tool,
+		VPCID:             setup.VPCID,
+		SubnetID:          setup.SubnetID,
+		AESSecret:         setup.AesSecret,
+		Debug:             debug,
+	})
 	if err != nil {
 		fmt.Println("Failed to deploy infra", err)
 		os.Exit(1)

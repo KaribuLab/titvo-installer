@@ -67,23 +67,38 @@ func (c *AWSFileCredentials) GetCredentials() (*AWSCredentials, error) {
 	}, nil
 }
 
+type SetupConfigFile struct {
+	AWSAccessKeyID     string `json:"aws_access_key_id"`
+	AWSSecretAccessKey string `json:"aws_secret_access_key"`
+	AWSSessionToken    string `json:"aws_session_token"`
+	AWSRegion          string `json:"aws_region"`
+	VPCID              string `json:"vpc_id"`
+	SubnetID           string `json:"subnet_id"`
+	AesSecret          string `json:"aes_secret"`
+}
+
+type SetupConfigFileLookup struct {
+	SetupConfigFile SetupConfigFile
+}
+
+func (c *SetupConfigFileLookup) GetCredentials() (*AWSCredentials, error) {
+	return &AWSCredentials{
+		AWSAccessKeyID:     c.SetupConfigFile.AWSAccessKeyID,
+		AWSSecretAccessKey: c.SetupConfigFile.AWSSecretAccessKey,
+		AWSSessionToken:    c.SetupConfigFile.AWSSessionToken,
+		AWSRegion:          c.SetupConfigFile.AWSRegion,
+	}, nil
+}
+
 type SetupConfig struct {
 	AWSCredentialsLookup AWSCredentialsLookup
-	TerraformStateBucket string
 	VPCID                string
 	SubnetID             string
 	AesSecret            string
 }
 
-func SetupInstallation() (err error, config *SetupConfig) {
+func SetupInstallation() (config *SetupConfig, err error) {
 	fmt.Println("Setting up Titvo Installer")
-	fmt.Println("Terraform state bucket name:")
-	terraformStateBucket, err := bufio.NewReader(os.Stdin).ReadString('\n')
-	if err != nil {
-		fmt.Println("Failed to read Terraform state bucket name", err)
-		os.Exit(1)
-	}
-	terraformStateBucket = strings.TrimSpace(terraformStateBucket)
 	var awsRegion string
 	fmt.Println("Enter your AWS Region:")
 	awsRegion, err = bufio.NewReader(os.Stdin).ReadString('\n')
@@ -134,7 +149,7 @@ func SetupInstallation() (err error, config *SetupConfig) {
 			os.Exit(1)
 		}
 		vpcID = strings.TrimSpace(vpcID)
-		fmt.Println("Enter your Subnet ID:")
+		fmt.Println("Enter your Subnet ID (Recommended to use a private subnet with int):")
 		subnetID, err := bufio.NewReader(os.Stdin).ReadString('\n')
 		if err != nil {
 			fmt.Println("Failed to read Subnet ID", err)
@@ -147,8 +162,7 @@ func SetupInstallation() (err error, config *SetupConfig) {
 			fmt.Println("Failed to read AES Secret", err)
 			os.Exit(1)
 		}
-		return nil, &SetupConfig{
-			TerraformStateBucket: terraformStateBucket,
+		return &SetupConfig{
 			AWSCredentialsLookup: &InputCredential{
 				AWSCredentials: AWSCredentials{
 					AWSAccessKeyID:     awsAccessKeyID,
@@ -160,7 +174,7 @@ func SetupInstallation() (err error, config *SetupConfig) {
 			VPCID:     vpcID,
 			SubnetID:  subnetID,
 			AesSecret: string(aesSecret),
-		}
+		}, nil
 	case "2":
 		fmt.Println("Enter your AWS Profile:")
 		profile, err := bufio.NewReader(os.Stdin).ReadString('\n')
@@ -189,8 +203,7 @@ func SetupInstallation() (err error, config *SetupConfig) {
 			fmt.Println("Failed to read AES Secret", err)
 			os.Exit(1)
 		}
-		return nil, &SetupConfig{
-			TerraformStateBucket: terraformStateBucket,
+		return &SetupConfig{
 			AWSCredentialsLookup: &AWSFileCredentials{
 				Profile: profile,
 				Region:  strings.TrimSpace(awsRegion),
@@ -198,9 +211,9 @@ func SetupInstallation() (err error, config *SetupConfig) {
 			VPCID:     vpcID,
 			SubnetID:  subnetID,
 			AesSecret: string(aesSecret),
-		}
+		}, nil
 	default:
 		slog.Error("Invalid choice", "error", err)
-		return fmt.Errorf("invalid choice %s", choice), nil
+		return nil, fmt.Errorf("invalid choice %s", choice)
 	}
 }

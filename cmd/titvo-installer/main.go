@@ -14,6 +14,8 @@ func NewRootCommand() *cobra.Command {
 		Long:  "Installer for Titvo",
 		Run:   internal.RunInstaller,
 	}
+	rootCmd.Flags().BoolP("debug", "d", false, "Enable debug mode")
+	rootCmd.Flags().StringP("config", "c", "", "Configuration file")
 	return rootCmd
 }
 
