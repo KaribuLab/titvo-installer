@@ -12,6 +12,7 @@ const titvoAuthSetupSource = "https://github.com/KaribuLab/titvo-auth-setup-aws.
 const titvoTaskCliFilesSource = "https://github.com/KaribuLab/titvo-task-cli-files-aws.git"
 const titvoTaskTriggerSource = "https://github.com/KaribuLab/titvo-task-trigger-aws.git"
 const titvoTaskStatusSource = "https://github.com/KaribuLab/titvo-task-status-aws.git"
+const titvoInstallerECRPublisherSource = "https://github.com/KaribuLab/titvo-installer-ecr-publisher.git"
 
 func DownloadInfraSource(dir string) error {
 	err := ExecuteWithOptions("git", &ExecuteOptions{
@@ -73,6 +74,17 @@ func DownloadTaskStatusSource(dir string) error {
 		WorkingDir: dir,
 	}, "clone", titvoTaskStatusSource)
 	fmt.Println("Downloaded task status from ", titvoTaskStatusSource, " to ", dir)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func DownloadInstallerECRPublisherSource(dir string) error {
+	err := ExecuteWithOptions("git", &ExecuteOptions{
+		WorkingDir: dir,
+	}, "clone", titvoInstallerECRPublisherSource)
+	fmt.Println("Downloaded installer ecr publisher from ", titvoInstallerECRPublisherSource, " to ", dir)
 	if err != nil {
 		return err
 	}
@@ -386,6 +398,49 @@ func DeployInfra(config DeployConfig) error {
 	}, "run-all", "apply", "-input=false", "-auto-approve", "--terragrunt-non-interactive")
 	if err != nil {
 		return fmt.Errorf("terragrunt apply task status failed: %w", err)
+	}
+	// NOTE: Installer ECR Publisher
+	err = DownloadInstallerECRPublisherSource(infraDir)
+	if err != nil {
+		return fmt.Errorf("failed to download installer ecr publisher: %w", err)
+	}
+	sourceDir = path.Join(infraDir, "titvo-installer-ecr-publisher")
+	if _, err := os.Stat(sourceDir); os.IsNotExist(err) {
+		return fmt.Errorf("installer ecr publisher directory %s does not exist", sourceDir)
+	}
+	prodDir = path.Join(sourceDir, "aws")
+	fmt.Println("Executing terragrunt apply installer ecr publisher")
+	err = ExecuteWithOptions("terragrunt", &ExecuteOptions{
+		WorkingDir: prodDir,
+		Env:        env,
+	}, "run-all", "apply", "-input=false", "-auto-approve", "--terragrunt-non-interactive")
+	if err != nil {
+		return fmt.Errorf("terragrunt apply installer ecr publisher failed: %w", err)
+	}
+	jobDefinitionARN, err := GetParameter(&config.AWSCredentials, "/tvo/security-scan/prod/infra/ecr-publisher-job-definition-arn")
+	if err != nil {
+		return fmt.Errorf("failed to get ecr publisher job definition arn: %w", err)
+	}
+	jobQueueARN, err := GetParameter(&config.AWSCredentials, "/tvo/security-scan/prod/infra/ecr-publisher-job-queue-arn")
+	if err != nil {
+		return fmt.Errorf("failed to get ecr publisher job queue arn: %w", err)
+	}
+	fmt.Println("Submitting installer ecr publisher job")
+	err = SubmitBatchJob(&config.AWSCredentials, "installer-ecr-publisher", jobQueueARN, jobDefinitionARN, map[string]string{
+		"GIT_URL":    titvoSecurityScanInfraSource,
+		"IMAGE_REPO": "tvo-security-scan-ecr-prod",
+		"REGION":     config.AWSCredentials.AWSRegion,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to submit installer ecr publisher job: %w", err)
+	}
+	fmt.Println("Destroying installer ecr publisher")
+	err = ExecuteWithOptions("terragrunt", &ExecuteOptions{
+		WorkingDir: prodDir,
+		Env:        env,
+	}, "run-all", "destroy", "-input=false", "-auto-approve", "--terragrunt-non-interactive")
+	if err != nil {
+		return fmt.Errorf("terragrunt destroy installer ecr publisher failed: %w", err)
 	}
 	fmt.Println("Deployed all services")
 	return nil

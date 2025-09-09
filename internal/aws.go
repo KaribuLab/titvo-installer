@@ -4,10 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/batch"
+	batchtypes "github.com/aws/aws-sdk-go-v2/service/batch/types"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	secretsmanagertypes "github.com/aws/aws-sdk-go-v2/service/secretsmanager/types"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
@@ -76,6 +79,32 @@ func PutParameter(creds *AWSCredentials, path, value string) error {
 	return nil
 }
 
+// GetParameter obtiene el valor de un parámetro del Parameter Store por su path
+func GetParameter(creds *AWSCredentials, path string) (string, error) {
+	cfg, err := creds.getAWSConfig(context.TODO())
+	if err != nil {
+		return "", fmt.Errorf("error al cargar configuración de AWS: %w", err)
+	}
+
+	client := ssm.NewFromConfig(cfg)
+
+	input := &ssm.GetParameterInput{
+		Name:           aws.String(path),
+		WithDecryption: aws.Bool(true), // Permitir desencriptar parámetros SecureString
+	}
+
+	result, err := client.GetParameter(context.TODO(), input)
+	if err != nil {
+		return "", fmt.Errorf("error al obtener parámetro '%s': %w", path, err)
+	}
+
+	if result.Parameter == nil || result.Parameter.Value == nil {
+		return "", fmt.Errorf("parámetro '%s' no tiene valor", path)
+	}
+
+	return *result.Parameter.Value, nil
+}
+
 func CreateSecret(creds *AWSCredentials, name, secretValue string) (string, error) {
 	cfg, err := creds.getAWSConfig(context.TODO())
 	if err != nil {
@@ -114,5 +143,91 @@ func CreateSecret(creds *AWSCredentials, name, secretValue string) (string, erro
 			return "", fmt.Errorf("error al actualizar secreto '%s': %w", name, err)
 		}
 		return *output.ARN, nil
+	}
+}
+
+// SubmitBatchJob envía un job de AWS Batch con variables de ambiente personalizadas y espera a que termine
+func SubmitBatchJob(creds *AWSCredentials, jobName, jobQueue, jobDefinition string, envVars map[string]string) error {
+	ctx := context.TODO()
+	cfg, err := creds.getAWSConfig(ctx)
+	if err != nil {
+		return fmt.Errorf("error al cargar configuración de AWS: %w", err)
+	}
+
+	client := batch.NewFromConfig(cfg)
+
+	// Convertir el mapa de variables de entorno al formato requerido por AWS Batch
+	var environment []batchtypes.KeyValuePair
+	for key, value := range envVars {
+		environment = append(environment, batchtypes.KeyValuePair{
+			Name:  aws.String(key),
+			Value: aws.String(value),
+		})
+	}
+
+	// Crear la solicitud para enviar el trabajo
+	input := &batch.SubmitJobInput{
+		JobName:       aws.String(jobName),
+		JobQueue:      aws.String(jobQueue),
+		JobDefinition: aws.String(jobDefinition),
+		ContainerOverrides: &batchtypes.ContainerOverrides{
+			Environment: environment,
+		},
+	}
+
+	// Enviar el trabajo
+	result, err := client.SubmitJob(ctx, input)
+	if err != nil {
+		return fmt.Errorf("error al enviar job de Batch '%s': %w", jobName, err)
+	}
+
+	if result.JobId == nil {
+		return fmt.Errorf("job ID no disponible en la respuesta")
+	}
+
+	jobID := *result.JobId
+	fmt.Printf("Job de Batch enviado con ID: %s\n", jobID)
+
+	// Monitorear el estado del trabajo hasta que termine
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("contexto cancelado mientras se esperaba el job: %w", ctx.Err())
+		case <-ticker.C:
+			// Describir el job para obtener su estado actual
+			describeInput := &batch.DescribeJobsInput{
+				Jobs: []string{jobID},
+			}
+
+			describeOutput, err := client.DescribeJobs(ctx, describeInput)
+			if err != nil {
+				return fmt.Errorf("error describing job '%s': %w", jobID, err)
+			}
+
+			if len(describeOutput.Jobs) == 0 {
+				return fmt.Errorf("job not found '%s'", jobID)
+			}
+
+			job := describeOutput.Jobs[0]
+			fmt.Printf("Current job status (%s): %s\n", jobID, job.Status)
+
+			// Verificar si el job ha terminado
+			switch job.Status {
+			case batchtypes.JobStatusSucceeded:
+				fmt.Printf("Job '%s' completed successfully\n", jobID)
+				return nil
+			case batchtypes.JobStatusFailed:
+				reason := "unknown reason"
+				if job.StatusReason != nil {
+					reason = *job.StatusReason
+				}
+				return fmt.Errorf("job '%s' failed with reason: %s", jobID, reason)
+				// Estados intermedios: SUBMITTED, PENDING, RUNNABLE, STARTING, RUNNING
+				// Continúa esperando en el siguiente ciclo
+			}
+		}
 	}
 }
