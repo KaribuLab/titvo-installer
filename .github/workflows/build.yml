@@ -18,7 +18,9 @@ jobs:
       - name: Download kli
         id: download_kli
         run: |
-          curl -sL https://github.com/KaribuLab/kli/releases/download/v0.4.0/kli  --output kli
+          curl -sL https://github.com/KaribuLab/kli/releases/download/v0.4.0/kli-linux-amd64.tar.gz  --output kli.tar.gz
+          tar -xzf kli.tar.gz
+          mv kli-linux-amd64 kli
       - name: Check tag
         id: check_tag
         run: |
