@@ -34,19 +34,16 @@ jobs:
     outputs:
       tag_exists: ${{ steps.check_tag.outputs.tag_exists }}
     steps:
-    -
-      name: Checkout
+    - name: Checkout
       uses: actions/checkout@v4
       with:
         fetch-depth: 0
-    -
-      name: Download kli
+    - name: Download kli
       uses: actions/download-artifact@v4
       with:
         name: kli
         path: ./
-    -
-      name: Check tag
+    - name: Check tag
       id: check_tag
       run: |
         chmod +x ./kli
@@ -66,25 +63,21 @@ jobs:
     runs-on: ubuntu-latest
     if: needs.check_tag.outputs.tag_exists == 'false'
     steps:
-    -
-      name: Checkout
+    - name: Checkout
       uses: actions/checkout@v4
       with:
         ssh-key: ${{ secrets.KARIBU_SSH_KEY }}
         fetch-depth: 0
-    -
-      name: Set up Git user
+    - name: Set up Git user
       run: |
         git config --global user.name "github-actions[bot]"
         git config --global user.email "github-actions[bot]@users.noreply.github.com"
-    -
-      name: Download kli
+    - name: Download kli
       uses: actions/download-artifact@v4
       with:
         name: kli
         path: ./
-    -
-      name: Push tags if needed
+    - name: Push tags if needed
       id: push_tags
       run: |
         chmod +x ./kli
