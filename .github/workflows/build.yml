@@ -19,12 +19,13 @@ jobs:
         id: download_kli
         run: |
           curl -sL https://github.com/KaribuLab/kli/releases/download/v0.4.0/kli-linux-amd64.tar.gz  --output kli.tar.gz
-          tar -xzf kli.tar.gz
-          mv kli-linux-amd64 kli
+          tar -xzf ./kli.tar.gz
+          mv ./kli-linux-amd64 ./kli
       - name: Check tag
         id: check_tag
         run: |
           chmod +x ./kli
+          ./kli -h
       - name: Upload kli
         uses: actions/upload-artifact@v4
         with:
