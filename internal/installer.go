@@ -37,6 +37,10 @@ func RunInstaller(cmd *cobra.Command, args []string) {
 			fmt.Println("Failed to unmarshal config file", err)
 			os.Exit(1)
 		}
+		if len(setupConfigFile.AesSecret) != 32 {
+			fmt.Println("AES Secret in config file must have 32 characters in length")
+			os.Exit(1)
+		}
 		setup = &SetupConfig{
 			AWSCredentialsLookup: &SetupConfigFileLookup{
 				SetupConfigFile: setupConfigFile,
@@ -44,6 +48,7 @@ func RunInstaller(cmd *cobra.Command, args []string) {
 			VPCID:     setupConfigFile.VPCID,
 			SubnetID:  setupConfigFile.SubnetID,
 			AesSecret: setupConfigFile.AesSecret,
+			UserName:  setupConfigFile.UserName,
 		}
 	} else {
 		setup, err = SetupInstallation()
@@ -77,4 +82,18 @@ func RunInstaller(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 	fmt.Println("Infra deployed successfully")
+	startConfig := StartConfig{
+		AWSCredentials: awsCredentials,
+		UserName:       setup.UserName,
+		OpenAIModel:    setup.OpenAIModel,
+		OpenAIApiKey:   setup.OpenAIApiKey,
+		AESSecret:      setup.AesSecret,
+		TitvoDir:       tool.TitvoDir,
+	}
+	err = StartConfiguration(&startConfig)
+	if err != nil {
+		fmt.Println("Failed to start configuration", err)
+		os.Exit(1)
+	}
+	fmt.Println("Configuration started successfully")
 }

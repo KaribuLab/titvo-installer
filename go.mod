@@ -10,10 +10,17 @@ require (
 require (
 	github.com/aws/aws-sdk-go-v2/service/batch v1.57.6
 	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.39.1
+	github.com/google/uuid v1.6.0
 	golang.org/x/term v0.34.0
 )
 
-require golang.org/x/sys v0.35.0 // indirect
+require (
+	github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue v1.20.11 // indirect
+	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.50.3 // indirect
+	github.com/aws/aws-sdk-go-v2/service/dynamodbstreams v1.30.4 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/endpoint-discovery v1.11.7 // indirect
+	golang.org/x/sys v0.35.0 // indirect
+)
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.39.0

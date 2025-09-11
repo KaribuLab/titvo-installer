@@ -75,6 +75,9 @@ type SetupConfigFile struct {
 	VPCID              string `json:"vpc_id"`
 	SubnetID           string `json:"subnet_id"`
 	AesSecret          string `json:"aes_secret"`
+	UserName           string `json:"user_name"`
+	OpenAIModel        string `json:"open_ai_model"`
+	OpenAIApiKey       string `json:"open_ai_api_key"`
 }
 
 type SetupConfigFileLookup struct {
@@ -95,6 +98,9 @@ type SetupConfig struct {
 	VPCID                string
 	SubnetID             string
 	AesSecret            string
+	UserName             string
+	OpenAIModel          string
+	OpenAIApiKey         string
 }
 
 func SetupInstallation() (config *SetupConfig, err error) {
@@ -162,6 +168,30 @@ func SetupInstallation() (config *SetupConfig, err error) {
 			fmt.Println("Failed to read AES Secret", err)
 			os.Exit(1)
 		}
+		if len(aesSecret) != 32 {
+			fmt.Println("AES Secret must have 32 characters in length")
+			os.Exit(1)
+		}
+		fmt.Println("Enter your first Titvo User Name:")
+		userName, err := bufio.NewReader(os.Stdin).ReadString('\n')
+		if err != nil {
+			fmt.Println("Failed to read first Titvo User Name", err)
+			os.Exit(1)
+		}
+		userName = strings.TrimSpace(userName)
+		fmt.Println("Enter your OpenAI Model:")
+		openAIModel, err := bufio.NewReader(os.Stdin).ReadString('\n')
+		if err != nil {
+			fmt.Println("Failed to read OpenAI Model", err)
+			os.Exit(1)
+		}
+		openAIModel = strings.TrimSpace(openAIModel)
+		fmt.Println("Enter your OpenAI API Key:")
+		openAIApiKey, err := term.ReadPassword(int(os.Stdin.Fd()))
+		if err != nil {
+			fmt.Println("Failed to read OpenAI API Key", err)
+			os.Exit(1)
+		}
 		return &SetupConfig{
 			AWSCredentialsLookup: &InputCredential{
 				AWSCredentials: AWSCredentials{
@@ -171,9 +201,12 @@ func SetupInstallation() (config *SetupConfig, err error) {
 					AWSRegion:          strings.TrimSpace(awsRegion),
 				},
 			},
-			VPCID:     vpcID,
-			SubnetID:  subnetID,
-			AesSecret: string(aesSecret),
+			VPCID:        vpcID,
+			SubnetID:     subnetID,
+			AesSecret:    string(aesSecret),
+			UserName:     userName,
+			OpenAIModel:  openAIModel,
+			OpenAIApiKey: string(openAIApiKey),
 		}, nil
 	case "2":
 		fmt.Println("Enter your AWS Profile:")
@@ -203,14 +236,41 @@ func SetupInstallation() (config *SetupConfig, err error) {
 			fmt.Println("Failed to read AES Secret", err)
 			os.Exit(1)
 		}
+		if len(aesSecret) != 32 {
+			fmt.Println("AES Secret must have 32 characters in length")
+			os.Exit(1)
+		}
+		fmt.Println("Enter your first Titvo User Name:")
+		userName, err := bufio.NewReader(os.Stdin).ReadString('\n')
+		if err != nil {
+			fmt.Println("Failed to read first Titvo User Name", err)
+			os.Exit(1)
+		}
+		userName = strings.TrimSpace(userName)
+		fmt.Println("Enter your OpenAI Model:")
+		openAIModel, err := bufio.NewReader(os.Stdin).ReadString('\n')
+		if err != nil {
+			fmt.Println("Failed to read OpenAI Model", err)
+			os.Exit(1)
+		}
+		openAIModel = strings.TrimSpace(openAIModel)
+		fmt.Println("Enter your OpenAI API Key:")
+		openAIApiKey, err := term.ReadPassword(int(os.Stdin.Fd()))
+		if err != nil {
+			fmt.Println("Failed to read OpenAI API Key", err)
+			os.Exit(1)
+		}
 		return &SetupConfig{
 			AWSCredentialsLookup: &AWSFileCredentials{
 				Profile: profile,
 				Region:  strings.TrimSpace(awsRegion),
 			},
-			VPCID:     vpcID,
-			SubnetID:  subnetID,
-			AesSecret: string(aesSecret),
+			VPCID:        vpcID,
+			SubnetID:     subnetID,
+			AesSecret:    string(aesSecret),
+			UserName:     userName,
+			OpenAIModel:  openAIModel,
+			OpenAIApiKey: string(openAIApiKey),
 		}, nil
 	default:
 		slog.Error("Invalid choice", "error", err)

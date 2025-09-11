@@ -9,8 +9,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/batch"
 	batchtypes "github.com/aws/aws-sdk-go-v2/service/batch/types"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	secretsmanagertypes "github.com/aws/aws-sdk-go-v2/service/secretsmanager/types"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
@@ -230,4 +232,34 @@ func SubmitBatchJob(creds *AWSCredentials, jobName, jobQueue, jobDefinition stri
 			}
 		}
 	}
+}
+
+// PutRecord insert a record in a DynamoDB table
+func PutRecord(creds *AWSCredentials, tableName string, item map[string]interface{}) error {
+	cfg, err := creds.getAWSConfig(context.TODO())
+	if err != nil {
+		return fmt.Errorf("error loading AWS configuration: %w", err)
+	}
+
+	client := dynamodb.NewFromConfig(cfg)
+
+	// Convert the map to DynamoDB attributes
+	dynamoItem, err := attributevalue.MarshalMap(item)
+	if err != nil {
+		return fmt.Errorf("error converting item to DynamoDB attributes: %w", err)
+	}
+
+	// Create the PutItem request
+	input := &dynamodb.PutItemInput{
+		TableName: aws.String(tableName),
+		Item:      dynamoItem,
+	}
+
+	// Execute the PutItem operation
+	_, err = client.PutItem(context.TODO(), input)
+	if err != nil {
+		return fmt.Errorf("error inserting item in table '%s': %w", tableName, err)
+	}
+
+	return nil
 }
