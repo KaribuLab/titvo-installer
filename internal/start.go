@@ -96,6 +96,10 @@ func encrypt(text, key string) (string, error) {
 	// Apply padding PKCS7 to make it a multiple of the block size
 	blockSize := block.BlockSize()
 	padding := blockSize - len(plaintext)%blockSize
+	// PKCS7 padding: if text is already multiple of block size, add a full block of padding
+	if padding == 0 {
+		padding = blockSize
+	}
 	padtext := make([]byte, len(plaintext)+padding)
 	copy(padtext, plaintext)
 	for i := len(plaintext); i < len(padtext); i++ {
@@ -123,6 +127,7 @@ type StartConfig struct {
 
 // StartConfiguration starts the configuration
 func StartConfiguration(config *StartConfig) error {
+	fmt.Println("Starting configuration")
 	dynamoUserTableName, err := GetParameter(config.AWSCredentials, "/tvo/security-scan/prod/infra/dynamo-user-table-name")
 	if err != nil {
 		return err
@@ -176,11 +181,7 @@ func StartConfiguration(config *StartConfig) error {
 	if len(config.AESSecret) != 32 {
 		return fmt.Errorf("AES_KEY must have 32 characters in length")
 	}
-	// Derive a 32-byte key from the AES secret using SHA-256
-	hash := sha256.Sum256([]byte(config.AESSecret))
-	aesKey := string(hash[:])
-
-	openAIApiKey, err := encrypt(config.OpenAIApiKey, aesKey)
+	openAIApiKey, err := encrypt(config.OpenAIApiKey, config.AESSecret)
 	if err != nil {
 		return err
 	}
@@ -278,17 +279,16 @@ func StartConfiguration(config *StartConfig) error {
 	if err != nil {
 		return err
 	}
-	fmt.Println("----------------------------------------------------------------")
-	fmt.Println("- API Key: ", apiKey)
-	fmt.Println("- User ID: ", userId)
-	fmt.Println("----------------------------------------------------------------")
-	fmt.Println("* Remember to keep your API Key and User ID in a safe place")
-	fmt.Println("----------------------------------------------------------------")
 	setupEndpoint, err := GetParameter(config.AWSCredentials, "/tvo/security-scan/prod/infra/api-gateway-account-api-full-endpoint")
 	if err != nil {
 		return err
 	}
-	fmt.Printf("- Setup Endpoint: %s/auth/setup\n", setupEndpoint)
+	fmt.Println("----------------------------------------------------------------")
+	fmt.Printf("- Setup Endpoint: %s\n", setupEndpoint)
+	fmt.Println("- User ID: ", userId)
+	fmt.Println("- API Key: ", apiKey)
+	fmt.Println("----------------------------------------------------------------")
+	fmt.Println("* Remember to keep your API Key and User ID in a safe place")
 	fmt.Println("----------------------------------------------------------------")
 	fmt.Println("Now download the Titvo CLI from the following link:")
 	fmt.Println("https://github.com/KaribuLab/tli/releases")

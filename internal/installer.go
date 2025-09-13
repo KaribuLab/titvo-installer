@@ -45,10 +45,12 @@ func RunInstaller(cmd *cobra.Command, args []string) {
 			AWSCredentialsLookup: &SetupConfigFileLookup{
 				SetupConfigFile: setupConfigFile,
 			},
-			VPCID:     setupConfigFile.VPCID,
-			SubnetID:  setupConfigFile.SubnetID,
-			AesSecret: setupConfigFile.AesSecret,
-			UserName:  setupConfigFile.UserName,
+			VPCID:        setupConfigFile.VPCID,
+			SubnetID:     setupConfigFile.SubnetID,
+			AesSecret:    setupConfigFile.AesSecret,
+			UserName:     setupConfigFile.UserName,
+			OpenAIModel:  setupConfigFile.OpenAIModel,
+			OpenAIApiKey: setupConfigFile.OpenAIApiKey,
 		}
 	} else {
 		setup, err = SetupInstallation()

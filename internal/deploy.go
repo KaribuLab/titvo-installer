@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"encoding/base64"
 	"fmt"
 	"os"
 	"path"
@@ -164,7 +165,8 @@ func DeployInfra(config DeployConfig) error {
 	if err != nil {
 		return fmt.Errorf("failed to put parameter subnet1: %w", err)
 	}
-	secretARN, err := CreateSecret(&config.AWSCredentials, "/tvo/security-scan/prod/aes_secret", config.AESSecret)
+	base64AESSecret := base64.StdEncoding.EncodeToString([]byte(config.AESSecret))
+	secretARN, err := CreateSecret(&config.AWSCredentials, "/tvo/security-scan/prod/aes_secret", base64AESSecret)
 	if err != nil {
 		return fmt.Errorf("failed to create secret aes_secret: %w", err)
 	}

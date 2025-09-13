@@ -2,3 +2,6 @@ bin
 .task
 .env
 *.json
+*.tar.gz
+*.zip
+tli*
