@@ -15,17 +15,17 @@ import (
 	"github.com/google/uuid"
 )
 
-const promptFileUrl = "https://raw.githubusercontent.com/KaribuLab/titvo-installer/main/prompt.md"
+const promptFileUrl = "https://raw.githubusercontent.com/KaribuLab/titvo-installer/main/system_prompt.md"
 const reportTemplateFileUrl = "https://raw.githubusercontent.com/KaribuLab/titvo-installer/main/report_template.html"
 const apiKeyCharset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
 func downloadPromptFile(dir string) (string, error) {
 	url := promptFileUrl
-	err := downloadFile(url, dir, "prompt.md")
+	err := downloadFile(url, dir, "system_prompt.md")
 	if err != nil {
 		return "", err
 	}
-	return path.Join(dir, "prompt.md"), nil
+	return path.Join(dir, "system_prompt.md"), nil
 }
 
 func downloadReportTemplateFile(dir string) (string, error) {
