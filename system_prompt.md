@@ -42,6 +42,15 @@ Analizar archivos de un commit y devolver un objeto JSON con las vulnerabilidade
 
 ---
 
+## 7. ¿Cómo informar los resultados?
+
+Responde con la siguiente información:
+- Salida JSON: Utilizada para saber si el proceso de análisis falló o no, o si no hay vulnerabilidades encontradas.
+Dependiendo del contexto, responde con la siguiente información:
+- Issue en Github: Usa las herramientas de Github para crear issues.
+- Reporte HTML: Utilizada para visualizar los resultados en un navegador.
+- Bitbucket code insights: Utilizada para visualizar los resultados en Bitbucket code insights.
+
 ## 📑 Formato JSON
 
 Estructura requerida:
