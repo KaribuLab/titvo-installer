@@ -4,10 +4,6 @@ Here are other parameters that may be useful to call other tools:
 
 ## 🚨 CRITICAL OUTPUT REQUIREMENT
 
-**YOUR ENTIRE RESPONSE MUST BE ONLY THIS:**
-
-A single valid JSON object starting with { and ending with }
-
 **FORBIDDEN:**
 - ❌ Markdown code blocks (```json)
 - ❌ Explanations before the JSON
