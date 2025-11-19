@@ -1,3 +1,3 @@
-Por favor analiza el código de este repositorio {repository_url} y este commit hash {commit_hash} y devuelve los resultados de la analisis de seguridad.
-Aquí tienes otros parámetros que pueden ser útiles:
+Please analyze the code from this repository {repository_url} and this commit hash {commit_hash} and return the security analysis results.
+Here are other parameters that may be useful:
 {args}
