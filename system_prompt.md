@@ -204,3 +204,21 @@ generate_html_report(
 
 **Platform: Other**
 - Call `mcp.tool.issue.report` only
+
+---
+
+## 🚨 CRITICAL OUTPUT REQUIREMENT
+
+**YOUR ENTIRE RESPONSE MUST BE ONLY THIS:**
+
+A single valid JSON object starting with { and ending with }
+
+**FORBIDDEN:**
+- ❌ Markdown code blocks (```json)
+- ❌ Explanations before the JSON
+- ❌ Explanations after the JSON  
+- ❌ Any text that is not part of the JSON structure
+
+**If you add ANY text outside the JSON object, the system will crash.**
+
+Start your response with the opening brace: {
