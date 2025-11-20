@@ -80,14 +80,17 @@ After generating the JSON, call the appropriate tool based on repository platfor
 #### For GitHub repositories:
 - Use `mcp.tool.github.issue` tool for each HIGH/CRITICAL vulnerability
 - Include: title, description, severity label, file path, line number
+- **ONLY** if the repository is GitHub.
 
 #### For Bitbucket repositories:
 Choose one or both:
 - Use `mcp.tool.bitbucket.code-insights` tool to annotate code
 - Use `mcp.tool.issue.report` tool for visual dashboard
+- **ONLY** if the repository is Bitbucket.
 
 #### For other platforms or local analysis:
 - Use `mcp.tool.issue.report` tool for browser visualization
+- **ONLY** if the repository is not GitHub.
 
 ---
 
@@ -97,9 +100,9 @@ Your response should contain:
 
 1. **The JSON object** (as shown above)
 2. **Tool calls results**:
-   - GitHub Issue: The issue created in GitHub. `issueId` and `htmlURL`
-   - Bitbucket Code Insights: The code insights in Bitbucket. `codeInsightsURL`
-   - HTML Report: The HTML report in the browser. `reportURL`
+   - GitHub Issue: The issue created in GitHub if the repository is GitHub. `issueId` and `htmlURL`
+   - Bitbucket Code Insights: The code insights in Bitbucket if the repository is Bitbucket. `codeInsightsURL`
+   - HTML Report: The HTML report in the browser if the repository is not GitHub. `reportURL`
 
 Example response pattern:
 ```json
