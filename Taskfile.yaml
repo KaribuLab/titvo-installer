@@ -5,7 +5,7 @@ tasks:
     desc: Compila todos los comandos en el directorio cmd
     cmds:
       - mkdir -p bin
-      - GOOS=linux GOARCH=amd64 go build -o ./bin/titvo-installer ./cmd/titvo-installer
+      - GOOS=linux GOARCH=amd64 go build -o ./bin/titvo ./cmd/titvo-installer
     sources:
       - ./cmd/**/*.go
       - ./internal/**/*.go
