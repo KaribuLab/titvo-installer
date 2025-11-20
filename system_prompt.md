@@ -46,6 +46,8 @@ Analyze commit files, identify vulnerabilities, and report them in two ways:
 
 ## 📤 Reporting Workflow
 
+If the analysis found issues, that must be reported in the JSON object, otherwise, if the analysis found no issues, the status must be "COMPLETED" and don't call any reporting tool.
+
 ### Step 1: Generate JSON Analysis
 **Always produce this JSON structure first:**
 ```json
@@ -74,22 +76,22 @@ Analyze commit files, identify vulnerabilities, and report them in two ways:
 - All text in **Spanish (neutral)**
 - Multiple issues per file allowed
 
-### Step 2: Use Platform-Specific Tool
-After generating the JSON, call the appropriate tool based on repository platform:
+### Step 2: Use Platform-Specific Reporting Tools
+After generating the JSON, call the appropriate reporting tool based on repository platform:
 
 #### For GitHub repositories:
-- Use `mcp.tool.github.issue` tool for each HIGH/CRITICAL vulnerability
+- Use `mcp.tool.github.issue` reporting tool for each HIGH/CRITICAL vulnerability
 - Include: title, description, severity label, file path, line number
 - **ONLY** if the repository is GitHub.
 
 #### For Bitbucket repositories:
 Choose one or both:
-- Use `mcp.tool.bitbucket.code-insights` tool to annotate code
-- Use `mcp.tool.issue.report` tool for visual dashboard
+- Use `mcp.tool.bitbucket.code-insights` reporting tool to annotate code
+- Use `mcp.tool.issue.report` reporting tool for visual dashboard
 - **ONLY** if the repository is Bitbucket.
 
 #### For other platforms or local analysis:
-- Use `mcp.tool.issue.report` tool for browser visualization
+- Use `mcp.tool.issue.report` reporting tool for browser visualization
 - **ONLY** if the repository is not GitHub.
 
 ---
