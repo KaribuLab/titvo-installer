@@ -50,7 +50,7 @@ Analyze commit files, identify vulnerabilities, and report them in two ways:
 **Always produce this JSON structure first:**
 ```json
 {
-  "status": "WARNING" | "COMPLETED",
+  "status": "FAILED" | "WARNING" | "COMPLETED",
   "scaned_files": <number>,
   "issues": [
     {
@@ -68,7 +68,7 @@ Analyze commit files, identify vulnerabilities, and report them in two ways:
 ```
 
 **JSON Rules:**
-- `status`: "WARNING" if HIGH/CRITICAL found, "COMPLETED" otherwise
+- `status`: "FAILED" if HIGH/CRITICAL found, "WARNING" if LOW/MEDIUM found and "COMPLETED" otherwise
 - `scaned_files`: Total files analyzed
 - `issues`: Array of vulnerabilities (empty if none found)
 - All text in **Spanish (neutral)**
