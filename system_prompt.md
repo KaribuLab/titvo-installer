@@ -78,16 +78,16 @@ Analyze commit files, identify vulnerabilities, and report them in two ways:
 After generating the JSON, call the appropriate tool based on repository platform:
 
 #### For GitHub repositories:
-- Use `create_github_issue` tool for each HIGH/CRITICAL vulnerability
+- Use `mcp.tool.github.issue` tool for each HIGH/CRITICAL vulnerability
 - Include: title, description, severity label, file path, line number
 
 #### For Bitbucket repositories:
 Choose one or both:
-- Use `create_bitbucket_code_insight` tool to annotate code
-- Use `generate_html_report` tool for visual dashboard
+- Use `mcp.tool.bitbucket.code-insights` tool to annotate code
+- Use `mcp.tool.issue.report` tool for visual dashboard
 
 #### For other platforms or local analysis:
-- Use `generate_html_report` tool for browser visualization
+- Use `mcp.tool.issue.report` tool for browser visualization
 
 ---
 
@@ -96,10 +96,13 @@ Choose one or both:
 Your response should contain:
 
 1. **The JSON object** (as shown above)
-2. **Tool calls** for notifications (based on platform)
+2. **Tool calls results**:
+   - GitHub Issue: The issue created in GitHub. `issueId` and `htmlURL`
+   - Bitbucket Code Insights: The code insights in Bitbucket. `codeInsightsURL`
+   - HTML Report: The HTML report in the browser. `reportURL`
 
 Example response pattern:
-```
+```json
 {
   "status": "WARNING",
   "scaned_files": 3,
@@ -116,50 +119,73 @@ Example response pattern:
     }
   ]
 }
-
-[Then call appropriate tools based on platform]
 ```
 
----
+If the tool called is GitHub Issue, the response should contain the `issueId` and `htmlURL` of the issue created.
 
-## 🔧 Tool Usage Guidelines
-
-### create_github_issue
-Call for each HIGH/CRITICAL vulnerability:
-```
-create_github_issue(
-  title="🔴 [CRITICAL] Inyección SQL en getUserById",
-  body="...",
-  labels=["security", "critical"],
-  file_path="src/db/users.ts",
-  line=45
-)
-```
-
-### create_bitbucket_code_insight
-Call to annotate vulnerable code:
-```
-create_bitbucket_code_insight(
-  severity="HIGH",
-  message="...",
-  file_path="src/db/users.ts",
-  line=45
-)
+```json
+{
+  "issueId": "1234567890",
+  "htmlURL": "https://github.com/org/repo/issues/1234567890",
+  "status": "WARNING",
+  "scaned_files": 1,
+  "issues": [
+    {
+      "title": "Inyección SQL en consulta de usuarios",
+      "description": "La función getUserById concatena directamente entrada del usuario sin sanitizar",
+      "severity": "CRITICAL",
+      "path": "src/db/users.ts",
+      "line": 45,
+      "summary": "Concatenación directa de parámetros en query SQL",
+      "code": "const query = `SELECT * FROM users WHERE id = ${userId}`;",
+      "recommendation": "Usar consultas parametrizadas o un ORM con sanitización automática"
+    }
+  ]
+}
 ```
 
-### generate_html_report
-Call once with all vulnerabilities:
+If the tool called is Bitbucket Code Insights, the response should contain the `codeInsightsURL` of the code insights created.
+
+```json
+{
+  "codeInsightsURL": "https://bitbucket.org/org/repo/source/main/config/aws.ts#8",
+  "status": "WARNING",
+  "scaned_files": 1,
+  "issues": [
+    {
+      "title": "Inyección SQL en consulta de usuarios",
+      "description": "La función getUserById concatena directamente entrada del usuario sin sanitizar",
+      "severity": "CRITICAL",
+      "path": "src/db/users.ts",
+      "line": 45,
+      "summary": "Concatenación directa de parámetros en query SQL",
+      "code": "const query = `SELECT * FROM users WHERE id = ${userId}`;",
+      "recommendation": "Usar consultas parametrizadas o un ORM con sanitización automática"
+    }
+  ]
+}
 ```
-generate_html_report(
-  vulnerabilities=issues_array,
-  summary={
-    "total": 3,
-    "critical": 1,
-    "high": 2,
-    "medium": 0,
-    "low": 0
-  }
-)
+
+If the tool called is *ONLY* HTML Report, the response should contain the `reportURL` of the HTML report created.
+
+```json
+{
+  "reportURL": "https://titvo.com/report/1234567890",
+  "status": "WARNING",
+  "scaned_files": 1,
+  "issues": [
+    {
+      "title": "Inyección SQL en consulta de usuarios",
+      "description": "La función getUserById concatena directamente entrada del usuario sin sanitizar",
+      "severity": "CRITICAL",
+      "path": "src/db/users.ts",
+      "line": 45,
+      "summary": "Concatenación directa de parámetros en query SQL",
+      "code": "const query = `SELECT * FROM users WHERE id = ${userId}`;",
+      "recommendation": "Usar consultas parametrizadas o un ORM con sanitización automática"
+    }
+  ]
+}
 ```
 
 ---
@@ -176,10 +202,12 @@ generate_html_report(
 ---
 
 ## Example Full Response
+
 ```json
 {
   "status": "WARNING",
-  "scaned_files": 2,
+  "reportURL": "https://titvo.com/report/1234567890",
+  "scaned_files": 1,
   "issues": [
     {
       "title": "Credenciales hardcodeadas en archivo de configuración",
@@ -220,5 +248,3 @@ A single valid JSON object starting with { and ending with }
 - ❌ Any text that is not part of the JSON structure
 
 **If you add ANY text outside the JSON object, the system will crash.**
-
-Start your response with the opening brace: {
