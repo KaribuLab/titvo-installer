@@ -19,7 +19,7 @@ func DownloadInfraSource(dir string) error {
 	err := ExecuteWithOptions("git", &ExecuteOptions{
 		WorkingDir: dir,
 	}, "clone", titvoInfraSource)
-	fmt.Println("Downloaded infra from ", titvoInfraSource, " to ", dir)
+	printInfo(fmt.Sprintf("Downloaded infra from %s to %s", titvoInfraSource, dir))
 	if err != nil {
 		return err
 	}
@@ -30,7 +30,7 @@ func DownloadSecurityScanInfraSource(dir string) error {
 	err := ExecuteWithOptions("git", &ExecuteOptions{
 		WorkingDir: dir,
 	}, "clone", titvoSecurityScanInfraSource)
-	fmt.Println("Downloaded security scan infra from ", titvoSecurityScanInfraSource, " to ", dir)
+	printInfo(fmt.Sprintf("Downloaded security scan infra from %s to %s", titvoSecurityScanInfraSource, dir))
 	if err != nil {
 		return err
 	}
@@ -41,7 +41,7 @@ func DownloadAuthSetupSource(dir string) error {
 	err := ExecuteWithOptions("git", &ExecuteOptions{
 		WorkingDir: dir,
 	}, "clone", titvoAuthSetupSource)
-	fmt.Println("Downloaded auth setup from ", titvoAuthSetupSource, " to ", dir)
+	printInfo(fmt.Sprintf("Downloaded auth setup from %s to %s", titvoAuthSetupSource, dir))
 	if err != nil {
 		return err
 	}
@@ -52,7 +52,7 @@ func DownloadTaskCliFilesSource(dir string) error {
 	err := ExecuteWithOptions("git", &ExecuteOptions{
 		WorkingDir: dir,
 	}, "clone", titvoTaskCliFilesSource)
-	fmt.Println("Downloaded task cli files from ", titvoTaskCliFilesSource, " to ", dir)
+	printInfo(fmt.Sprintf("Downloaded task cli files from %s to %s", titvoTaskCliFilesSource, dir))
 	if err != nil {
 		return err
 	}
@@ -63,7 +63,7 @@ func DownloadTaskTriggerSource(dir string) error {
 	err := ExecuteWithOptions("git", &ExecuteOptions{
 		WorkingDir: dir,
 	}, "clone", titvoTaskTriggerSource)
-	fmt.Println("Downloaded task trigger from ", titvoTaskTriggerSource, " to ", dir)
+	printInfo(fmt.Sprintf("Downloaded task trigger from %s to %s", titvoTaskTriggerSource, dir))
 	if err != nil {
 		return err
 	}
@@ -74,7 +74,7 @@ func DownloadTaskStatusSource(dir string) error {
 	err := ExecuteWithOptions("git", &ExecuteOptions{
 		WorkingDir: dir,
 	}, "clone", titvoTaskStatusSource)
-	fmt.Println("Downloaded task status from ", titvoTaskStatusSource, " to ", dir)
+	printInfo(fmt.Sprintf("Downloaded task status from %s to %s", titvoTaskStatusSource, dir))
 	if err != nil {
 		return err
 	}
@@ -85,7 +85,7 @@ func DownloadInstallerECRPublisherSource(dir string) error {
 	err := ExecuteWithOptions("git", &ExecuteOptions{
 		WorkingDir: dir,
 	}, "clone", titvoInstallerECRPublisherSource)
-	fmt.Println("Downloaded installer ecr publisher from ", titvoInstallerECRPublisherSource, " to ", dir)
+	printInfo(fmt.Sprintf("Downloaded installer ecr publisher from %s to %s", titvoInstallerECRPublisherSource, dir))
 	if err != nil {
 		return err
 	}
@@ -116,7 +116,7 @@ func DeployInfra(config DeployConfig) error {
 		return fmt.Errorf("source directory %s does not exist", sourceDir)
 	}
 	prodDir := path.Join(sourceDir, "prod", "us-east-1")
-	fmt.Println("Deploying infra to ", prodDir)
+	printInfo(fmt.Sprintf("Deploying infra to %s", prodDir))
 	currentPathEnv := os.Getenv("PATH")
 	var newPathEnv string
 	if config.InstallToolConfig.OS == Windows {
@@ -156,7 +156,7 @@ func DeployInfra(config DeployConfig) error {
 		env["AWS_SESSION_TOKEN"] = config.AWSCredentials.AWSSessionToken
 	}
 
-	fmt.Println("Setting up parameters")
+	printInfo("Setting up parameters")
 	err = PutParameter(&config.AWSCredentials, "/tvo/security-scan/prod/infra/vpc-id", config.VPCID)
 	if err != nil {
 		return fmt.Errorf("failed to put parameter vpc-id: %w", err)
@@ -179,7 +179,7 @@ func DeployInfra(config DeployConfig) error {
 		return fmt.Errorf("failed to put parameter encryption-key-arn: %w", err)
 	}
 	// NOTE: Base Infra
-	fmt.Println("Executing terragrunt apply base infra")
+	printInfo("Executing terragrunt apply base infra")
 	err = ExecuteWithOptions("terragrunt", &ExecuteOptions{
 		WorkingDir: prodDir,
 		Env:        env,
@@ -197,8 +197,8 @@ func DeployInfra(config DeployConfig) error {
 		return fmt.Errorf("security scan directory %s does not exist", sourceDir)
 	}
 	prodDir = path.Join(sourceDir, "aws")
-	fmt.Println("Deploying security scan to ", prodDir)
-	fmt.Println("Executing terragrunt apply security scan")
+	printInfo(fmt.Sprintf("Deploying security scan to %s", prodDir))
+	printInfo("Executing terragrunt apply security scan")
 	err = ExecuteWithOptions("terragrunt", &ExecuteOptions{
 		WorkingDir: prodDir,
 		Env:        env,
@@ -216,15 +216,15 @@ func DeployInfra(config DeployConfig) error {
 		return fmt.Errorf("auth setup directory %s does not exist", sourceDir)
 	}
 	prodDir = path.Join(sourceDir, "aws")
-	fmt.Println("Deploying auth setup to ", prodDir)
-	fmt.Println("Updating git submodules")
+	printInfo(fmt.Sprintf("Deploying auth setup to %s", prodDir))
+	printInfo("Updating git submodules")
 	err = ExecuteWithOptions("git", &ExecuteOptions{
 		WorkingDir: sourceDir,
 	}, "submodule", "update", "--init")
 	if err != nil {
 		return fmt.Errorf("git submodule update failed: %w", err)
 	}
-	fmt.Println("Executing build with npm")
+	printInfo("Executing build with npm")
 	err = ExecuteWithOptions("npm", &ExecuteOptions{
 		WorkingDir: sourceDir,
 	}, "ci")
@@ -237,7 +237,7 @@ func DeployInfra(config DeployConfig) error {
 	if err != nil {
 		return fmt.Errorf("npm run build failed: %w", err)
 	}
-	fmt.Println("Executing terragrunt apply auth setup")
+	printInfo("Executing terragrunt apply auth setup")
 	err = ExecuteWithOptions("terragrunt", &ExecuteOptions{
 		WorkingDir: prodDir,
 		Env:        env,
@@ -255,15 +255,15 @@ func DeployInfra(config DeployConfig) error {
 		return fmt.Errorf("task cli files directory %s does not exist", sourceDir)
 	}
 	prodDir = path.Join(sourceDir, "aws")
-	fmt.Println("Deploying task cli files to ", prodDir)
-	fmt.Println("Updating git submodules")
+	printInfo(fmt.Sprintf("Deploying task cli files to %s", prodDir))
+	printInfo("Updating git submodules")
 	err = ExecuteWithOptions("git", &ExecuteOptions{
 		WorkingDir: sourceDir,
 	}, "submodule", "update", "--init")
 	if err != nil {
 		return fmt.Errorf("git submodule update failed: %w", err)
 	}
-	fmt.Println("Executing build with npm")
+	printInfo("Executing build with npm")
 	err = ExecuteWithOptions("npm", &ExecuteOptions{
 		WorkingDir: sourceDir,
 	}, "ci")
@@ -276,7 +276,7 @@ func DeployInfra(config DeployConfig) error {
 	if err != nil {
 		return fmt.Errorf("npm run build failed: %w", err)
 	}
-	fmt.Println("Executing build with npm")
+	printInfo("Executing terragrunt apply task cli files")
 	err = ExecuteWithOptions("npm", &ExecuteOptions{
 		WorkingDir: sourceDir,
 	}, "ci")
@@ -289,7 +289,7 @@ func DeployInfra(config DeployConfig) error {
 	if err != nil {
 		return fmt.Errorf("npm run build failed: %w", err)
 	}
-	fmt.Println("Executing terragrunt apply task cli files")
+	printInfo("Executing terragrunt apply task cli files")
 	err = ExecuteWithOptions("terragrunt", &ExecuteOptions{
 		WorkingDir: prodDir,
 		Env:        env,
@@ -307,15 +307,15 @@ func DeployInfra(config DeployConfig) error {
 		return fmt.Errorf("task trigger directory %s does not exist", sourceDir)
 	}
 	prodDir = path.Join(sourceDir, "aws")
-	fmt.Println("Deploying task trigger to ", prodDir)
-	fmt.Println("Updating git submodules")
+	printInfo(fmt.Sprintf("Deploying task trigger to %s", prodDir))
+	printInfo("Updating git submodules")
 	err = ExecuteWithOptions("git", &ExecuteOptions{
 		WorkingDir: sourceDir,
 	}, "submodule", "update", "--init")
 	if err != nil {
 		return fmt.Errorf("git submodule update failed: %w", err)
 	}
-	fmt.Println("Executing build with npm")
+	printInfo("Executing build with npm")
 	err = ExecuteWithOptions("npm", &ExecuteOptions{
 		WorkingDir: sourceDir,
 	}, "ci")
@@ -328,7 +328,7 @@ func DeployInfra(config DeployConfig) error {
 	if err != nil {
 		return fmt.Errorf("npm run build failed: %w", err)
 	}
-	fmt.Println("Executing build with npm")
+	printInfo("Executing build with npm")
 	err = ExecuteWithOptions("npm", &ExecuteOptions{
 		WorkingDir: sourceDir,
 	}, "ci")
@@ -341,7 +341,7 @@ func DeployInfra(config DeployConfig) error {
 	if err != nil {
 		return fmt.Errorf("npm run build failed: %w", err)
 	}
-	fmt.Println("Executing terragrunt apply task trigger")
+	printInfo("Executing terragrunt apply task trigger")
 	err = ExecuteWithOptions("terragrunt", &ExecuteOptions{
 		WorkingDir: prodDir,
 		Env:        env,
@@ -359,15 +359,15 @@ func DeployInfra(config DeployConfig) error {
 		return fmt.Errorf("task status directory %s does not exist", sourceDir)
 	}
 	prodDir = path.Join(sourceDir, "aws")
-	fmt.Println("Deploying task status to ", prodDir)
-	fmt.Println("Updating git submodules")
+	printInfo(fmt.Sprintf("Deploying task status to %s", prodDir))
+	printInfo("Updating git submodules")
 	err = ExecuteWithOptions("git", &ExecuteOptions{
 		WorkingDir: sourceDir,
 	}, "submodule", "update", "--init")
 	if err != nil {
 		return fmt.Errorf("git submodule update failed: %w", err)
 	}
-	fmt.Println("Executing build with npm")
+	printInfo("Executing build with npm")
 	err = ExecuteWithOptions("npm", &ExecuteOptions{
 		WorkingDir: sourceDir,
 	}, "ci")
@@ -380,7 +380,7 @@ func DeployInfra(config DeployConfig) error {
 	if err != nil {
 		return fmt.Errorf("npm run build failed: %w", err)
 	}
-	fmt.Println("Executing build with npm")
+	printInfo("Executing build with npm")
 	err = ExecuteWithOptions("npm", &ExecuteOptions{
 		WorkingDir: sourceDir,
 	}, "ci")
@@ -393,7 +393,7 @@ func DeployInfra(config DeployConfig) error {
 	if err != nil {
 		return fmt.Errorf("npm run build failed: %w", err)
 	}
-	fmt.Println("Executing terragrunt apply task status")
+	printInfo("Executing terragrunt apply task status")
 	err = ExecuteWithOptions("terragrunt", &ExecuteOptions{
 		WorkingDir: prodDir,
 		Env:        env,
@@ -411,7 +411,7 @@ func DeployInfra(config DeployConfig) error {
 		return fmt.Errorf("installer ecr publisher directory %s does not exist", sourceDir)
 	}
 	prodDir = path.Join(sourceDir, "aws")
-	fmt.Println("Executing terragrunt apply installer ecr publisher")
+	printInfo("Executing terragrunt apply installer ecr publisher")
 	err = ExecuteWithOptions("terragrunt", &ExecuteOptions{
 		WorkingDir: prodDir,
 		Env:        env,
@@ -427,7 +427,7 @@ func DeployInfra(config DeployConfig) error {
 	if err != nil {
 		return fmt.Errorf("failed to get ecr publisher job queue arn: %w", err)
 	}
-	fmt.Println("Submitting installer ecr publisher job")
+	printInfo("Submitting installer ecr publisher job")
 	err = SubmitBatchJob(&config.AWSCredentials, "installer-ecr-publisher", jobQueueARN, jobDefinitionARN, map[string]string{
 		"GIT_URL":    titvoSecurityScanInfraSource,
 		"IMAGE_REPO": "tvo-security-scan-ecr-prod",
@@ -436,7 +436,7 @@ func DeployInfra(config DeployConfig) error {
 	if err != nil {
 		return fmt.Errorf("failed to submit installer ecr publisher job: %w", err)
 	}
-	fmt.Println("Destroying installer ecr publisher")
+	printInfo("Destroying installer ecr publisher")
 	err = ExecuteWithOptions("terragrunt", &ExecuteOptions{
 		WorkingDir: prodDir,
 		Env:        env,
@@ -444,6 +444,6 @@ func DeployInfra(config DeployConfig) error {
 	if err != nil {
 		return fmt.Errorf("terragrunt destroy installer ecr publisher failed: %w", err)
 	}
-	fmt.Println("Deployed all services")
+	printInfo("Deployed all services")
 	return nil
 }

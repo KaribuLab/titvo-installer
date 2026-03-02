@@ -26,8 +26,8 @@ const nodeUrl = "https://nodejs.org/download/release/v%s/node-v%s-%s-%s.%s"
 
 func DownloadTerragrunt(dir string, version string, osType OS, arch Arch) (string, error) {
 	url := fmt.Sprintf(terragruntUrl, version, osType, arch)
-	fmt.Println("Downloading Terragrunt")
-	fmt.Println(url)
+	printInfo("Downloading Terragrunt")
+	printInfo(url)
 	fileExtension := ""
 	if osType == Windows {
 		fileExtension = ".exe"
@@ -55,8 +55,8 @@ func DownloadTerragrunt(dir string, version string, osType OS, arch Arch) (strin
 
 func DownloadTerraform(dir string, version string, osType OS, arch Arch) (string, error) {
 	url := fmt.Sprintf(terraformUrl, version, version, osType, arch, "zip")
-	fmt.Println("Downloading Terraform")
-	fmt.Println(url)
+	printInfo("Downloading Terraform")
+	printInfo(url)
 	zipFileName := "terraform.zip"
 	err := downloadFile(url, dir, zipFileName)
 	if err != nil {
@@ -95,8 +95,8 @@ func DownloadNode(dir string, version string, osType OS, arch Arch) (string, err
 		url = fmt.Sprintf(nodeUrl, version, version, osType, archDownload, "tar.gz")
 		nodeDir = fmt.Sprintf("node-v%s-%s-%s", version, osType, archDownload)
 	}
-	fmt.Println("Downloading Node")
-	fmt.Println(url)
+	printInfo("Downloading Node")
+	printInfo(url)
 	tarFileName := "node.tar.gz"
 	err := downloadFile(url, dir, tarFileName)
 	if err != nil {
@@ -140,7 +140,7 @@ func InstallTools() (config *InstallToolConfig, err error) {
 	}
 	titvoDir := path.Join(home, ".titvo")
 	binDir := path.Join(titvoDir, "bin")
-	fmt.Printf("Installing Tools in %s\n", binDir)
+	printInfo(fmt.Sprintf("Installing Tools in %s", binDir))
 	if err := os.MkdirAll(binDir, 0755); err != nil {
 		return nil, err
 	}
@@ -156,17 +156,17 @@ func InstallTools() (config *InstallToolConfig, err error) {
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("Terragrunt downloaded to %s\n", terragruntDir)
+	printInfo(fmt.Sprintf("Terragrunt downloaded to %s", terragruntDir))
 	terraformDir, err := DownloadTerraform(binDir, "1.9.8", os, arch)
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("Terraform downloaded to %s\n", terraformDir)
+	printInfo(fmt.Sprintf("Terraform downloaded to %s", terraformDir))
 	nodeDir, err := DownloadNode(titvoDir, "20.19.4", os, arch)
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("Node downloaded to %s\n", nodeDir)
+	printInfo(fmt.Sprintf("Node downloaded to %s", nodeDir))
 	return &InstallToolConfig{
 		Dir:              binDir,
 		OS:               os,

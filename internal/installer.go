@@ -53,12 +53,12 @@ func RunInstaller(cmd *cobra.Command, args []string) {
 			printErrorAndExit(err)
 		}
 	}
-	fmt.Println("Setup successfully")
+	printInfo("Setup successfully")
 	tool, err := InstallTools()
 	if err != nil {
 		printErrorAndExit(err)
 	}
-	fmt.Println("Tools installed successfully")
+	printInfo("Tools installed successfully")
 	awsCredentials, err := setup.AWSCredentialsLookup.GetCredentials()
 	if err != nil {
 		printErrorAndExit(err)
