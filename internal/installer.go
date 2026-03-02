@@ -11,35 +11,30 @@ import (
 func RunInstaller(cmd *cobra.Command, args []string) {
 	debug, err := cmd.Flags().GetBool("debug")
 	if err != nil {
-		fmt.Println("Failed to get debug flag", err)
-		os.Exit(1)
+		printErrorAndExit(err)
 	}
 	if debug {
-		fmt.Println("Debug mode enabled")
+		printInfo("Debug mode enabled")
 	}
 	configFile, err := cmd.Flags().GetString("config")
 	if err != nil {
-		fmt.Println("Failed to get config flag", err)
-		os.Exit(1)
+		printErrorAndExit(err)
 	}
-	fmt.Println("Starting Titvo Installer")
+	printInfo("Starting Titvo Installer")
 	var setup *SetupConfig
 	if configFile != "" {
-		fmt.Println("Using config file", configFile)
+		printInfo(fmt.Sprintf("Using config file %s", configFile))
 		configFileBytes, err := os.ReadFile(configFile)
 		if err != nil {
-			fmt.Println("Failed to read config file", err)
-			os.Exit(1)
+			printErrorAndExit(err)
 		}
 		var setupConfigFile SetupConfigFile
 		err = json.Unmarshal(configFileBytes, &setupConfigFile)
 		if err != nil {
-			fmt.Println("Failed to unmarshal config file", err)
-			os.Exit(1)
+			printErrorAndExit(err)
 		}
 		if len(setupConfigFile.AesSecret) != 32 {
-			fmt.Println("AES Secret in config file must have 32 characters in length")
-			os.Exit(1)
+			printErrorAndExit(fmt.Errorf("AES Secret in config file must have 32 characters in length"))
 		}
 		setup = &SetupConfig{
 			AWSCredentialsLookup: &SetupConfigFileLookup{
@@ -55,21 +50,18 @@ func RunInstaller(cmd *cobra.Command, args []string) {
 	} else {
 		setup, err = SetupInstallation()
 		if err != nil {
-			fmt.Println("Failed to setup", err)
-			os.Exit(1)
+			printErrorAndExit(err)
 		}
 	}
 	fmt.Println("Setup successfully")
 	tool, err := InstallTools()
 	if err != nil {
-		fmt.Println("Failed to install tools", err)
-		os.Exit(1)
+		printErrorAndExit(err)
 	}
 	fmt.Println("Tools installed successfully")
 	awsCredentials, err := setup.AWSCredentialsLookup.GetCredentials()
 	if err != nil {
-		fmt.Println("Failed to get aws setup", err)
-		os.Exit(1)
+		printErrorAndExit(err)
 	}
 	err = DeployInfra(DeployConfig{
 		AWSCredentials:    *awsCredentials,
@@ -80,10 +72,9 @@ func RunInstaller(cmd *cobra.Command, args []string) {
 		Debug:             debug,
 	})
 	if err != nil {
-		fmt.Println("Failed to deploy infra", err)
-		os.Exit(1)
+		printErrorAndExit(err)
 	}
-	fmt.Println("Infra deployed successfully")
+	printInfo("Infra deployed successfully")
 	startConfig := StartConfig{
 		AWSCredentials: awsCredentials,
 		UserName:       setup.UserName,
@@ -94,8 +85,7 @@ func RunInstaller(cmd *cobra.Command, args []string) {
 	}
 	err = StartConfiguration(&startConfig)
 	if err != nil {
-		fmt.Println("Failed to start configuration", err)
-		os.Exit(1)
+		printErrorAndExit(err)
 	}
-	fmt.Println("Configuration started successfully")
+	printInfo("Configuration started successfully")
 }

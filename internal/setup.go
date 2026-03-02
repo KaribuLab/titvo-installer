@@ -1,14 +1,11 @@
 package internal
 
 import (
-	"bufio"
 	"fmt"
-	"log/slog"
 	"os"
 	"path"
 	"strings"
 
-	"golang.org/x/term"
 	"gopkg.in/ini.v1"
 )
 
@@ -103,177 +100,103 @@ type SetupConfig struct {
 	OpenAIApiKey         string
 }
 
+func askForPromptInput(awsRegion string) (*SetupConfig, error) {
+	var awsAccessKeyID string
+	var awsSecretAccessKey string
+	var awsSessionToken string
+	var vpcID string
+	var subnetID string
+	var aesSecret string
+	var userName string
+	var openAIModel string
+	var openAIApiKey string
+	var err error
+	awsAccessKeyID, err = askForPassword("Enter your AWS Access Key ID", "AWS Access Key ID")
+	if err != nil {
+		printErrorAndExit(err)
+	}
+	awsSecretAccessKey, err = askForPassword("Enter your AWS Secret Access Key", "AWS Secret Access Key")
+	if err != nil {
+		printErrorAndExit(err)
+	}
+	awsSessionToken, err = askForPassword("Enter your AWS Session Token", "AWS Session Token")
+	if err != nil {
+		printErrorAndExit(err)
+	}
+	vpcID, err = askForInput("Enter your VPC ID", "VPC ID")
+	if err != nil {
+		printErrorAndExit(err)
+	}
+	subnetID, err = askForInput("Enter your Subnet ID (Recommended to use a private subnet with int)", "Subnet ID")
+	if err != nil {
+		printErrorAndExit(err)
+	}
+	aesSecret, err = askForPassword("Enter your AES Secret", "AES Secret")
+	if err != nil {
+		printErrorAndExit(err)
+	}
+	if len(aesSecret) != 32 {
+		printErrorAndExit(fmt.Errorf("AES Secret must have 32 characters in length"))
+	}
+	userName, err = askForInput("Enter your first Titvo User Name", "Titvo User Name")
+	if err != nil {
+		printErrorAndExit(err)
+	}
+	openAIModel, err = askForInput("Enter your OpenAI Model", "OpenAI Model")
+	if err != nil {
+		printErrorAndExit(err)
+	}
+	openAIApiKey, err = askForPassword("Enter your OpenAI API Key", "OpenAI API Key")
+	if err != nil {
+		printErrorAndExit(err)
+	}
+	return &SetupConfig{
+		AWSCredentialsLookup: &InputCredential{
+			AWSCredentials: AWSCredentials{
+				AWSAccessKeyID:     awsAccessKeyID,
+				AWSSecretAccessKey: awsSecretAccessKey,
+				AWSSessionToken:    awsSessionToken,
+				AWSRegion:          strings.TrimSpace(awsRegion),
+			},
+		},
+		VPCID:        vpcID,
+		SubnetID:     subnetID,
+		AesSecret:    string(aesSecret),
+		UserName:     userName,
+		OpenAIModel:  openAIModel,
+		OpenAIApiKey: string(openAIApiKey),
+	}, nil
+}
+
 func SetupInstallation() (config *SetupConfig, err error) {
-	fmt.Println("Setting up Titvo Installer")
-	var awsRegion string
-	fmt.Println("Enter your AWS Region:")
-	awsRegion, err = bufio.NewReader(os.Stdin).ReadString('\n')
+	printInfo("Setting up Titvo Installer")
+	awsRegion, err := askForInput("Enter your AWS Region", "AWS Region")
 	if err != nil {
-		fmt.Println("Failed to read AWS Region", err)
-		os.Exit(1)
+		printErrorAndExit(err)
 	}
-	fmt.Println("You want to give the credentials from input or a credentials file?")
-	fmt.Println("1. Input")
-	fmt.Println("2. File")
-	fmt.Println("Enter your choice:")
-	choice, err := bufio.NewReader(os.Stdin).ReadString('\n')
+	choices := []choice{
+		{
+			Label: "Input",
+			Value: "1",
+			Callback: func() (any, error) {
+				return askForPromptInput(awsRegion)
+			},
+		},
+		{
+			Label: "File",
+			Value: "2",
+			Callback: func() (any, error) {
+				return askForCredentialsFile(awsRegion)
+			},
+		},
+	}
+	result, err := askForChoices("You want to give the credentials from input or a credentials file?", choices)
 	if err != nil {
-		fmt.Println("Failed to read choice", err)
-		os.Exit(1)
+		printErrorAndExit(err)
 	}
-	choice = strings.TrimSpace(choice)
-	switch choice {
-	case "1":
-		var awsAccessKeyID string
-		var awsSecretAccessKey string
-		var awsSessionToken string
-		fmt.Println("Enter your AWS Access Key ID:")
-		accessKeyBytes, err := term.ReadPassword(int(os.Stdin.Fd()))
-		if err != nil {
-			fmt.Println("Failed to read AWS Access Key ID", err)
-			os.Exit(1)
-		}
-		awsAccessKeyID = strings.TrimSpace(string(accessKeyBytes))
-		fmt.Println("Enter your AWS Secret Access Key:")
-		secretKeyBytes, err := term.ReadPassword(int(os.Stdin.Fd()))
-		if err != nil {
-			fmt.Println("Failed to read AWS Secret Access Key", err)
-			os.Exit(1)
-		}
-		awsSecretAccessKey = strings.TrimSpace(string(secretKeyBytes))
-		fmt.Println("Enter your AWS Session Token:")
-		sessionTokenBytes, err := term.ReadPassword(int(os.Stdin.Fd()))
-		if err != nil {
-			fmt.Println("Failed to read AWS Session Token", err)
-			os.Exit(1)
-		}
-		awsSessionToken = strings.TrimSpace(string(sessionTokenBytes))
-		fmt.Println("Enter your VPC ID:")
-		vpcID, err := bufio.NewReader(os.Stdin).ReadString('\n')
-		if err != nil {
-			fmt.Println("Failed to read VPC ID", err)
-			os.Exit(1)
-		}
-		vpcID = strings.TrimSpace(vpcID)
-		fmt.Println("Enter your Subnet ID (Recommended to use a private subnet with int):")
-		subnetID, err := bufio.NewReader(os.Stdin).ReadString('\n')
-		if err != nil {
-			fmt.Println("Failed to read Subnet ID", err)
-			os.Exit(1)
-		}
-		subnetID = strings.TrimSpace(subnetID)
-		fmt.Println("Enter your AES Secret:")
-		aesSecret, err := term.ReadPassword(int(os.Stdin.Fd()))
-		if err != nil {
-			fmt.Println("Failed to read AES Secret", err)
-			os.Exit(1)
-		}
-		if len(aesSecret) != 32 {
-			fmt.Println("AES Secret must have 32 characters in length")
-			os.Exit(1)
-		}
-		fmt.Println("Enter your first Titvo User Name:")
-		userName, err := bufio.NewReader(os.Stdin).ReadString('\n')
-		if err != nil {
-			fmt.Println("Failed to read first Titvo User Name", err)
-			os.Exit(1)
-		}
-		userName = strings.TrimSpace(userName)
-		fmt.Println("Enter your OpenAI Model:")
-		openAIModel, err := bufio.NewReader(os.Stdin).ReadString('\n')
-		if err != nil {
-			fmt.Println("Failed to read OpenAI Model", err)
-			os.Exit(1)
-		}
-		openAIModel = strings.TrimSpace(openAIModel)
-		fmt.Println("Enter your OpenAI API Key:")
-		openAIApiKey, err := term.ReadPassword(int(os.Stdin.Fd()))
-		if err != nil {
-			fmt.Println("Failed to read OpenAI API Key", err)
-			os.Exit(1)
-		}
-		return &SetupConfig{
-			AWSCredentialsLookup: &InputCredential{
-				AWSCredentials: AWSCredentials{
-					AWSAccessKeyID:     awsAccessKeyID,
-					AWSSecretAccessKey: awsSecretAccessKey,
-					AWSSessionToken:    awsSessionToken,
-					AWSRegion:          strings.TrimSpace(awsRegion),
-				},
-			},
-			VPCID:        vpcID,
-			SubnetID:     subnetID,
-			AesSecret:    string(aesSecret),
-			UserName:     userName,
-			OpenAIModel:  openAIModel,
-			OpenAIApiKey: string(openAIApiKey),
-		}, nil
-	case "2":
-		fmt.Println("Enter your AWS Profile:")
-		profile, err := bufio.NewReader(os.Stdin).ReadString('\n')
-		if err != nil {
-			fmt.Println("Failed to read profile", err)
-			os.Exit(1)
-		}
-		profile = strings.TrimSpace(profile)
-		fmt.Println("Enter your VPC ID:")
-		vpcID, err := bufio.NewReader(os.Stdin).ReadString('\n')
-		if err != nil {
-			fmt.Println("Failed to read VPC ID", err)
-			os.Exit(1)
-		}
-		vpcID = strings.TrimSpace(vpcID)
-		fmt.Println("Enter your Subnet ID:")
-		subnetID, err := bufio.NewReader(os.Stdin).ReadString('\n')
-		if err != nil {
-			fmt.Println("Failed to read Subnet ID", err)
-			os.Exit(1)
-		}
-		subnetID = strings.TrimSpace(subnetID)
-		fmt.Println("Enter your AES Secret:")
-		aesSecret, err := term.ReadPassword(int(os.Stdin.Fd()))
-		if err != nil {
-			fmt.Println("Failed to read AES Secret", err)
-			os.Exit(1)
-		}
-		if len(aesSecret) != 32 {
-			fmt.Println("AES Secret must have 32 characters in length")
-			os.Exit(1)
-		}
-		fmt.Println("Enter your first Titvo User Name:")
-		userName, err := bufio.NewReader(os.Stdin).ReadString('\n')
-		if err != nil {
-			fmt.Println("Failed to read first Titvo User Name", err)
-			os.Exit(1)
-		}
-		userName = strings.TrimSpace(userName)
-		fmt.Println("Enter your OpenAI Model:")
-		openAIModel, err := bufio.NewReader(os.Stdin).ReadString('\n')
-		if err != nil {
-			fmt.Println("Failed to read OpenAI Model", err)
-			os.Exit(1)
-		}
-		openAIModel = strings.TrimSpace(openAIModel)
-		fmt.Println("Enter your OpenAI API Key:")
-		openAIApiKey, err := term.ReadPassword(int(os.Stdin.Fd()))
-		if err != nil {
-			fmt.Println("Failed to read OpenAI API Key", err)
-			os.Exit(1)
-		}
-		return &SetupConfig{
-			AWSCredentialsLookup: &AWSFileCredentials{
-				Profile: profile,
-				Region:  strings.TrimSpace(awsRegion),
-			},
-			VPCID:        vpcID,
-			SubnetID:     subnetID,
-			AesSecret:    string(aesSecret),
-			UserName:     userName,
-			OpenAIModel:  openAIModel,
-			OpenAIApiKey: string(openAIApiKey),
-		}, nil
-	default:
-		slog.Error("Invalid choice", "error", err)
-		return nil, fmt.Errorf("invalid choice %s", choice)
+	config, ok := result.(*SetupConfig)
+	if !ok {
+		return nil, fmt.Errorf("unexpected type returned from askForChoices")
 	}
+	return config, nil
 }
