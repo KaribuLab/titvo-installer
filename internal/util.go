@@ -131,7 +131,8 @@ func extractTarGz(src, dest string) error {
 			}
 		default:
 			// Ignorar tipos no soportados en lugar de fallar
-			fmt.Printf("Advertencia: tipo de archivo no soportado ignorado: %c en %s\n", header.Typeflag, header.Name)
+			printInfo(fmt.Sprintf("Warning: unsupported file type ignored: %c in %s", header.Typeflag, header.Name))
+			continue
 		}
 	}
 	return nil

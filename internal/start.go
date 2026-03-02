@@ -127,7 +127,7 @@ type StartConfig struct {
 
 // StartConfiguration starts the configuration
 func StartConfiguration(config *StartConfig) error {
-	fmt.Println("Starting configuration")
+	printInfo("Starting configuration")
 	dynamoUserTableName, err := GetParameter(config.AWSCredentials, "/tvo/security-scan/prod/infra/dynamo-user-table-name")
 	if err != nil {
 		return err
@@ -283,18 +283,18 @@ func StartConfiguration(config *StartConfig) error {
 	if err != nil {
 		return err
 	}
-	fmt.Println("----------------------------------------------------------------")
-	fmt.Printf("- Setup Endpoint: %s\n", setupEndpoint)
-	fmt.Println("- User ID: ", userId)
-	fmt.Println("- API Key: ", apiKey)
-	fmt.Println("----------------------------------------------------------------")
-	fmt.Println("* Remember to keep your API Key and User ID in a safe place")
-	fmt.Println("----------------------------------------------------------------")
-	fmt.Println("Now download the Titvo CLI from the following link:")
-	fmt.Println("https://github.com/KaribuLab/tli/releases")
-	fmt.Println("----------------------------------------------------------------")
-	fmt.Println("And run the following command to setup the Titvo CLI:")
-	fmt.Println("tli setup")
-	fmt.Println("----------------------------------------------------------------")
+	printInfo("----------------------------------------------------------------")
+	printInfo(fmt.Sprintf("- Setup Endpoint: %s", setupEndpoint))
+	printInfo(fmt.Sprintf("- User ID: %s", userId))
+	printInfo(fmt.Sprintf("- API Key: %s", apiKey))
+	printInfo("----------------------------------------------------------------")
+	printInfo("* Remember to keep your API Key and User ID in a safe place")
+	printInfo("----------------------------------------------------------------")
+	printInfo("Now download the Titvo CLI from the following link:")
+	printInfo("https://github.com/KaribuLab/tli/releases")
+	printInfo("----------------------------------------------------------------")
+	printInfo("And run the following command to setup the Titvo CLI:")
+	printInfo("tli setup")
+	printInfo("----------------------------------------------------------------")
 	return nil
 }

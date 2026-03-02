@@ -188,7 +188,7 @@ func SubmitBatchJob(creds *AWSCredentials, jobName, jobQueue, jobDefinition stri
 	}
 
 	jobID := *result.JobId
-	fmt.Printf("Job de Batch enviado con ID: %s\n", jobID)
+	printInfo(fmt.Sprintf("Job de Batch enviado con ID: %s", jobID))
 
 	// Monitorear el estado del trabajo hasta que termine
 	ticker := time.NewTicker(10 * time.Second)
@@ -214,12 +214,12 @@ func SubmitBatchJob(creds *AWSCredentials, jobName, jobQueue, jobDefinition stri
 			}
 
 			job := describeOutput.Jobs[0]
-			fmt.Printf("Current job status (%s): %s\n", jobID, job.Status)
+			printInfo(fmt.Sprintf("Current job status (%s): %s", jobID, job.Status))
 
 			// Verificar si el job ha terminado
 			switch job.Status {
 			case batchtypes.JobStatusSucceeded:
-				fmt.Printf("Job '%s' completed successfully\n", jobID)
+				printInfo(fmt.Sprintf("Job '%s' completed successfully", jobID))
 				return nil
 			case batchtypes.JobStatusFailed:
 				reason := "unknown reason"
