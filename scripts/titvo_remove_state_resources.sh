@@ -7,7 +7,8 @@ set -e  # Salir si hay errores
 
 # Definir múltiples prefijos
 PREFIXES=(
-    "tvo"
+    "tvo",
+    "titvo"
 )
 
 # PRIORIZAR AWS_REGION sobre otras variables

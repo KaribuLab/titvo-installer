@@ -61,7 +61,7 @@ fi
 source .env
 
 # Verificar variables requeridas
-REQUIRED_VARS=("AWS_ACCOUNT_ID" "AWS_STAGE" "AWS_REGION")
+REQUIRED_VARS=("AWS_STAGE" "AWS_REGION")
 for var in "${REQUIRED_VARS[@]}"; do
     if [ -z "${!var}" ]; then
         log_error "Variable $var no está definida en .env"
@@ -86,11 +86,14 @@ log_info "Iniciando proceso de destrucción..."
 echo ""
 
 # Variables del proyecto
-PROJECT_NAME="tvo-security-scan"
+PROJECT_NAME="titvo-security-scan"
 REPO_NAME="${PROJECT_NAME}-ecr-${AWS_STAGE}"
-CLI_FILES_BUCKET_NAME="${PROJECT_NAME}-reports-${AWS_STAGE}-${AWS_ACCOUNT_ID}"
+CLI_FILES_BUCKET_NAME="${PROJECT_NAME}-reports-${AWS_STAGE}"
 INFRA_DIR="$HOME/.titvo/infra"
-
+if [ -n "$AWS_ACCOUNT_ID"];
+then
+    CLI_FILES_BUCKET_NAME="${CLI_FILES_BUCKET_NAME}-${AWS_ACCOUNT_ID}"
+fi
 # Contador de errores
 ERRORS=0
 
