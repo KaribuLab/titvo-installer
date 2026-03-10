@@ -1,0 +1,25 @@
+# Titvo Installer
+
+This is a projects designed to install all required components to install Titvo Security tool.
+
+## Purpose
+
+Create an executable program with automated installation proccess using:
+
+- Node.js
+- Terraform/Terragrunt
+
+Al required tools are downloaded in the user environment to deploy al components and other configuration.
+
+In the internal package are all logic required to the installation process.
+
+---
+
+Agents must follow the rules defined in the `rules/` directory.
+
+## Mandatory Rules
+
+- rules/ephemeral-worktrees.md
+- rules/checkpoint.md
+- rules/commit-style.md
+- rules/terragrunt/validation-and-formatting.md
