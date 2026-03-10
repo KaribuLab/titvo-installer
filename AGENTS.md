@@ -15,6 +15,15 @@ In the internal package are all logic required to the installation process.
 
 ---
 
+Yo have available these skills in the `skills/` directory:
+
+## Useful Skills
+
+- skills/ephemeral-worktrees
+- skills/go-mockery
+
+---
+
 Agents must follow the rules defined in the `rules/` directory.
 
 ## Mandatory Rules
@@ -22,4 +31,3 @@ Agents must follow the rules defined in the `rules/` directory.
 - rules/ephemeral-worktrees.md
 - rules/checkpoint.md
 - rules/commit-style.md
-- rules/terragrunt/validation-and-formatting.md
