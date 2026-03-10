@@ -15,6 +15,20 @@ In the internal package are all logic required to the installation process.
 
 ---
 
+## Memory
+
+Use Engram to persist important project knowledge.
+
+When discovering:
+- architecture decisions
+- infrastructure endpoints
+- environment conventions
+- repository structure
+
+Store them using the Engram memory tool.
+
+---
+
 Yo have available these skills in the `skills/` directory:
 
 ## Useful Skills
