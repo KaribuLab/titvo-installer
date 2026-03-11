@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "skills": {
+    "ephemeral-worktree": {
+      "source": "KaribuLab/coding-agents",
+      "sourceType": "github",
+      "computedHash": "c957e38409d1bd018bd454027c7b244f052bf21dbe4ca122adce61fa741bd75e"
+    },
+    "go-mockery": {
+      "source": "KaribuLab/coding-agents",
+      "sourceType": "github",
+      "computedHash": "a324f690be87d0d42b44e20ea0cf1f07ee120d98742b08e843b76fe0821da4c2"
+    }
+  }
+}

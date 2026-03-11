@@ -2,6 +2,7 @@ bin
 .task
 .env
 *.json
-*.tar.gz
+q*.tar.gz
 *.zip
 tli*
+!skills-lock.json
