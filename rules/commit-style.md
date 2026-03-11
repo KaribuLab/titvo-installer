@@ -16,4 +16,6 @@ refactor(api): simplify service layer
 
 Checkpoint commits must use:
 
-checkpoint(agent):<session description>
+checkpoint(agent): <session description>
+
+When used for ephemeral worktree development, checkpoint commits are local safety commits and must not be pushed unless the user explicitly requests it.
