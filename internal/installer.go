@@ -40,12 +40,14 @@ func RunInstaller(cmd *cobra.Command, args []string) {
 			AWSCredentialsLookup: &SetupConfigFileLookup{
 				SetupConfigFile: setupConfigFile,
 			},
-			VPCID:        setupConfigFile.VPCID,
-			SubnetID:     setupConfigFile.SubnetID,
-			AesSecret:    setupConfigFile.AesSecret,
-			UserName:     setupConfigFile.UserName,
-			OpenAIModel:  setupConfigFile.OpenAIModel,
-			OpenAIApiKey: setupConfigFile.OpenAIApiKey,
+			VPCID:             setupConfigFile.VPCID,
+			PrivateSubnetCIDR: setupConfigFile.PrivateSubnetCIDR,
+			AvailabilityZone:  setupConfigFile.AvailabilityZone,
+			NatGatewayID:      setupConfigFile.NatGatewayID,
+			AesSecret:         setupConfigFile.AesSecret,
+			UserName:          setupConfigFile.UserName,
+			OpenAIModel:       setupConfigFile.OpenAIModel,
+			OpenAIApiKey:      setupConfigFile.OpenAIApiKey,
 		}
 	} else {
 		setup, err = SetupInstallation()
@@ -67,7 +69,9 @@ func RunInstaller(cmd *cobra.Command, args []string) {
 		AWSCredentials:    *awsCredentials,
 		InstallToolConfig: *tool,
 		VPCID:             setup.VPCID,
-		SubnetID:          setup.SubnetID,
+		PrivateSubnetCIDR: setup.PrivateSubnetCIDR,
+		AvailabilityZone:  setup.AvailabilityZone,
+		NatGatewayID:      setup.NatGatewayID,
 		AESSecret:         setup.AesSecret,
 		Debug:             debug,
 	})

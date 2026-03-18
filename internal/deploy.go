@@ -24,7 +24,7 @@ var deployInfraFn = deployInfra
 func installerECRPublisherJobs(region string) []batchJobSpec {
 	return []batchJobSpec{
 		{
-			Name: "installer-ecr-publisher",
+			Name: "installer-ecr-publisher-agent",
 			EnvVars: map[string]string{
 				"GIT_URL":    titvoAgentAWS,
 				"IMAGE_REPO": "tvo-agent-ecr-prod",
@@ -94,7 +94,9 @@ type DeployConfig struct {
 	AWSCredentials    AWSCredentials
 	InstallToolConfig InstallToolConfig
 	VPCID             string
-	SubnetID          string
+	PrivateSubnetCIDR string
+	AvailabilityZone  string
+	NatGatewayID      string
 	AESSecret         string
 	Debug             bool
 }

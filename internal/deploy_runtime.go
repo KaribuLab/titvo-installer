@@ -2,10 +2,17 @@ package internal
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path"
 )
+
+type privateSubnetConfig struct {
+	CIDRBlock        string `json:"cidr_block"`
+	AvailabilityZone string `json:"availability_zone"`
+	NatGatewayID     string `json:"nat_gateway_id"`
+}
 
 var executeWithOptionsFn = ExecuteWithOptions
 var getAccountIDFn = GetAccountID
@@ -45,17 +52,30 @@ func runBuild(sourceDir string, repeats int) error {
 	return nil
 }
 
-func deployNodeComponent(infraDir, repoDirName, label string, downloadFn func(string) error, env map[string]string, buildRepeats int, needsSubmodules bool) error {
-	if err := downloadFn(infraDir); err != nil {
-		return fmt.Errorf("failed to download %s: %w", label, err)
+func applyTerragruntInDir(dir, label string, env map[string]string) error {
+	if err := ensureDirExists(dir, "%s directory does not exist"); err != nil {
+		return err
 	}
+	printInfo(fmt.Sprintf("Executing terragrunt apply %s", label))
+	if err := runTerragrunt(dir, env, "apply"); err != nil {
+		return fmt.Errorf("terragrunt apply %s failed: %w", label, err)
+	}
+	return nil
+}
 
-	sourceDir := path.Join(infraDir, repoDirName)
+func deployTerraformComponentFromSource(sourceDir, label string, env map[string]string) error {
 	if err := ensureDirExists(sourceDir, "%s directory does not exist"); err != nil {
 		return err
 	}
 	prodDir := path.Join(sourceDir, "aws")
 	printInfo(fmt.Sprintf("Deploying %s to %s", label, prodDir))
+	return applyTerragruntInDir(prodDir, label, env)
+}
+
+func deployNodeComponentFromSource(sourceDir, label string, env map[string]string, buildRepeats int, needsSubmodules bool) error {
+	if err := ensureDirExists(sourceDir, "%s directory does not exist"); err != nil {
+		return err
+	}
 
 	if needsSubmodules {
 		printInfo("Updating git submodules")
@@ -70,11 +90,16 @@ func deployNodeComponent(infraDir, repoDirName, label string, downloadFn func(st
 		}
 	}
 
-	printInfo(fmt.Sprintf("Executing terragrunt apply %s", label))
-	if err := runTerragrunt(prodDir, env, "apply"); err != nil {
-		return fmt.Errorf("terragrunt apply %s failed: %w", label, err)
+	return deployTerraformComponentFromSource(sourceDir, label, env)
+}
+
+func deployNodeComponent(infraDir, repoDirName, label string, downloadFn func(string) error, env map[string]string, buildRepeats int, needsSubmodules bool) error {
+	if err := downloadFn(infraDir); err != nil {
+		return fmt.Errorf("failed to download %s: %w", label, err)
 	}
-	return nil
+
+	sourceDir := path.Join(infraDir, repoDirName)
+	return deployNodeComponentFromSource(sourceDir, label, env, buildRepeats, needsSubmodules)
 }
 
 func deployInfra(config DeployConfig) error {
@@ -129,13 +154,24 @@ func deployInfra(config DeployConfig) error {
 	}
 
 	printInfo("Setting up parameters")
+	privateSubnets, err := json.Marshal([]privateSubnetConfig{
+		{
+			CIDRBlock:        config.PrivateSubnetCIDR,
+			AvailabilityZone: config.AvailabilityZone,
+			NatGatewayID:     config.NatGatewayID,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to serialize private subnet configuration: %w", err)
+	}
+
 	parameterWrites := []struct {
 		name  string
 		path  string
 		value string
 	}{
-		{name: "vpc-id", path: "/tvo/security-scan/prod/infra/vpc-id", value: config.VPCID},
-		{name: "subnet1", path: "/tvo/security-scan/prod/infra/subnet1", value: config.SubnetID},
+		{name: "vpc-id", path: "/tvo/security-scan/prod/infra/vpc/vpc_id", value: config.VPCID},
+		{name: "private-subnets", path: "/tvo/security-scan/prod/infra/vpc/installer/subnets/private", value: string(privateSubnets)},
 	}
 	for _, param := range parameterWrites {
 		if err := putParameterFn(&config.AWSCredentials, param.path, param.value); err != nil {
@@ -152,8 +188,8 @@ func deployInfra(config DeployConfig) error {
 		path  string
 		value string
 	}{
-		{name: "encryption-key-name", path: "/tvo/security-scan/prod/infra/encryption-key-name", value: "/tvo/security-scan/prod/aes_secret"},
-		{name: "encryption-key-arn", path: "/tvo/security-scan/prod/infra/secret-manager-arn", value: secretARN},
+		{name: "encryption-key-name", path: "/tvo/security-scan/prod/infra/kms/encryption-key-name", value: "/tvo/security-scan/prod/aes_secret"},
+		{name: "encryption-key-arn", path: "/tvo/security-scan/prod/infra/secret/manager/arn", value: secretARN},
 	}
 	for _, param := range secretParameters {
 		if err := putParameterFn(&config.AWSCredentials, param.path, param.value); err != nil {
@@ -185,6 +221,19 @@ func deployInfra(config DeployConfig) error {
 		}
 	}
 
+	if err := DownloadMCPGatewaySource(infraDir); err != nil {
+		return fmt.Errorf("failed to download MCP gateway: %w", err)
+	}
+	mcpGatewaySourceDir := path.Join(infraDir, "titvo-mcp-gateway")
+	if err := ensureDirExists(mcpGatewaySourceDir, "MCP gateway directory %s does not exist"); err != nil {
+		return err
+	}
+	mcpGatewayECRDir := path.Join(mcpGatewaySourceDir, "aws", "ecr")
+	printInfo(fmt.Sprintf("Deploying MCP gateway ECR to %s", mcpGatewayECRDir))
+	if err := applyTerragruntInDir(mcpGatewayECRDir, "MCP gateway ECR", env); err != nil {
+		return err
+	}
+
 	if err := DownloadInstallerECRPublisherSource(infraDir); err != nil {
 		return fmt.Errorf("failed to download installer ecr publisher: %w", err)
 	}
@@ -198,11 +247,11 @@ func deployInfra(config DeployConfig) error {
 		return fmt.Errorf("terragrunt apply installer ecr publisher failed: %w", err)
 	}
 
-	jobDefinitionARN, err := getParameterFn(&config.AWSCredentials, "/tvo/security-scan/prod/infra/ecr-publisher-job-definition-arn")
+	jobDefinitionARN, err := getParameterFn(&config.AWSCredentials, "/tvo/security-scan/prod/infra/ecr/publisher/job_definition_arn")
 	if err != nil {
 		return fmt.Errorf("failed to get ecr publisher job definition arn: %w", err)
 	}
-	jobQueueARN, err := getParameterFn(&config.AWSCredentials, "/tvo/security-scan/prod/infra/ecr-publisher-job-queue-arn")
+	jobQueueARN, err := getParameterFn(&config.AWSCredentials, "/tvo/security-scan/prod/infra/ecr/publisher/job_queue_arn")
 	if err != nil {
 		return fmt.Errorf("failed to get ecr publisher job queue arn: %w", err)
 	}
@@ -218,12 +267,15 @@ func deployInfra(config DeployConfig) error {
 		return fmt.Errorf("terragrunt destroy installer ecr publisher failed: %w", err)
 	}
 
+	if err := deployTerraformComponentFromSource(mcpGatewaySourceDir, "MCP gateway", env); err != nil {
+		return err
+	}
+
 	secondStageComponents := []struct {
 		repoDirName string
 		label       string
 		downloadFn  func(string) error
 	}{
-		{repoDirName: "titvo-mcp-gateway", label: "MCP gateway", downloadFn: DownloadMCPGatewaySource},
 		{repoDirName: "titvo-bitbucket-code-insights-aws", label: "bitbucket code insights aws", downloadFn: DownloadBitbucketCodeInsightsAWSSource},
 		{repoDirName: "titvo-git-commit-files-aws", label: "git commit files aws", downloadFn: DownloadGitCommitFilesAWSSource},
 		{repoDirName: "titvo-github-issue-aws", label: "github issue aws", downloadFn: DownloadGithubIssueAWSSource},

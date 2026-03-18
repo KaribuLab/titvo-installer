@@ -90,7 +90,7 @@ func TestInstallerECRPublisherJobs(t *testing.T) {
 		t.Fatalf("expected 2 jobs, got %d", len(jobs))
 	}
 
-	if jobs[0].Name != "installer-ecr-publisher" {
+	if jobs[0].Name != "installer-ecr-publisher-agent" {
 		t.Fatalf("unexpected first job name: %s", jobs[0].Name)
 	}
 	if jobs[0].EnvVars["GIT_URL"] != titvoAgentAWS {

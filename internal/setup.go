@@ -70,7 +70,9 @@ type SetupConfigFile struct {
 	AWSSessionToken    string `json:"aws_session_token"`
 	AWSRegion          string `json:"aws_region"`
 	VPCID              string `json:"vpc_id"`
-	SubnetID           string `json:"subnet_id"`
+	PrivateSubnetCIDR  string `json:"private_subnet_cidr"`
+	AvailabilityZone   string `json:"availability_zone"`
+	NatGatewayID       string `json:"nat_gateway_id"`
 	AesSecret          string `json:"aes_secret"`
 	UserName           string `json:"user_name"`
 	OpenAIModel        string `json:"open_ai_model"`
@@ -93,7 +95,9 @@ func (c *SetupConfigFileLookup) GetCredentials() (*AWSCredentials, error) {
 type SetupConfig struct {
 	AWSCredentialsLookup AWSCredentialsLookup
 	VPCID                string
-	SubnetID             string
+	PrivateSubnetCIDR    string
+	AvailabilityZone     string
+	NatGatewayID         string
 	AesSecret            string
 	UserName             string
 	OpenAIModel          string
@@ -105,7 +109,9 @@ func askForPromptInput(awsRegion string) (*SetupConfig, error) {
 	var awsSecretAccessKey string
 	var awsSessionToken string
 	var vpcID string
-	var subnetID string
+	var privateSubnetCIDR string
+	var availabilityZone string
+	var natGatewayID string
 	var aesSecret string
 	var userName string
 	var openAIModel string
@@ -127,7 +133,16 @@ func askForPromptInput(awsRegion string) (*SetupConfig, error) {
 	if err != nil {
 		printErrorAndExit(err)
 	}
-	subnetID, err = askForInput("Enter your Subnet ID (Recommended to use a private subnet with int)", "Subnet ID")
+	printAskQuestion("These values will be used to create an isolated private network for Titvo.")
+	privateSubnetCIDR, err = askForInput("Enter your private subnet CIDR (e.g. 172.31.64.0/20)", "Private Subnet CIDR")
+	if err != nil {
+		printErrorAndExit(err)
+	}
+	availabilityZone, err = askForInput("Enter your Availability Zone (e.g. us-east-1a)", "Availability Zone")
+	if err != nil {
+		printErrorAndExit(err)
+	}
+	natGatewayID, err = askForInput("Enter your NAT Gateway ID (e.g. nat-xxxxxxxxxxxxxxxxx)", "NAT Gateway ID")
 	if err != nil {
 		printErrorAndExit(err)
 	}
@@ -159,12 +174,14 @@ func askForPromptInput(awsRegion string) (*SetupConfig, error) {
 				AWSRegion:          strings.TrimSpace(awsRegion),
 			},
 		},
-		VPCID:        vpcID,
-		SubnetID:     subnetID,
-		AesSecret:    string(aesSecret),
-		UserName:     userName,
-		OpenAIModel:  openAIModel,
-		OpenAIApiKey: string(openAIApiKey),
+		VPCID:             vpcID,
+		PrivateSubnetCIDR: privateSubnetCIDR,
+		AvailabilityZone:  availabilityZone,
+		NatGatewayID:      natGatewayID,
+		AesSecret:         string(aesSecret),
+		UserName:          userName,
+		OpenAIModel:       openAIModel,
+		OpenAIApiKey:      string(openAIApiKey),
 	}, nil
 }
 

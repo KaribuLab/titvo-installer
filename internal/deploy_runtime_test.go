@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -18,7 +19,7 @@ func successfulDeployStubs() {
 		return "arn:aws:secretsmanager:secret", nil
 	}
 	getParameterFn = func(creds *AWSCredentials, path string) (string, error) {
-		if path == "/tvo/security-scan/prod/infra/ecr-publisher-job-definition-arn" {
+		if path == "/tvo/security-scan/prod/infra/ecr/publisher/job_definition_arn" {
 			return "job-def", nil
 		}
 		return "job-queue", nil
@@ -43,10 +44,12 @@ func validDeployConfig(titvoDir string) DeployConfig {
 			TerragruntBinDir: "tg",
 			NodeBinDir:       "node",
 		},
-		VPCID:     "vpc-1",
-		SubnetID:  "subnet-1",
-		AESSecret: "secret",
-		Debug:     false,
+		VPCID:             "vpc-1",
+		PrivateSubnetCIDR: "172.31.64.0/20",
+		AvailabilityZone:  "us-east-1a",
+		NatGatewayID:      "nat-00000000000000001",
+		AESSecret:         "secret",
+		Debug:             false,
 	}
 }
 
@@ -84,6 +87,7 @@ func createRequiredInfraDirs(t *testing.T, titvoDir string) {
 		"infra/titvo-task-status-aws/aws",
 		"infra/titvo-installer-ecr-publisher/aws",
 		"infra/titvo-mcp-gateway/aws",
+		"infra/titvo-mcp-gateway/aws/ecr",
 		"infra/titvo-bitbucket-code-insights-aws/aws",
 		"infra/titvo-git-commit-files-aws/aws",
 		"infra/titvo-github-issue-aws/aws",
@@ -144,6 +148,28 @@ func TestDeployInfraSuccess(t *testing.T) {
 
 	successfulDeployStubs()
 	jobsSubmitted := 0
+	writtenParams := map[string]string{}
+	terragruntApplyDirs := []string{}
+	mcpRanNpm := false
+	mcpRanSubmodule := false
+	executeWithOptionsFn = func(command string, options *ExecuteOptions, args ...string) error {
+		if options != nil && strings.Contains(options.WorkingDir, "titvo-mcp-gateway") {
+			if command == "npm" {
+				mcpRanNpm = true
+			}
+			if command == "git" && len(args) > 0 && args[0] == "submodule" {
+				mcpRanSubmodule = true
+			}
+		}
+		if command == "terragrunt" && options != nil && len(args) > 1 && args[0] == "run-all" && args[1] == "apply" {
+			terragruntApplyDirs = append(terragruntApplyDirs, options.WorkingDir)
+		}
+		return nil
+	}
+	putParameterFn = func(creds *AWSCredentials, path, value string) error {
+		writtenParams[path] = value
+		return nil
+	}
 	submitBatchJobFn = func(creds *AWSCredentials, jobName, jobQueue, jobDefinition string, envVars map[string]string) error {
 		jobsSubmitted++
 		return nil
@@ -156,8 +182,77 @@ func TestDeployInfraSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
+	privateSubnetsValue, ok := writtenParams["/tvo/security-scan/prod/infra/vpc/installer/subnets/private"]
+	if !ok {
+		t.Fatalf("expected private subnets parameter to be written")
+	}
+	var privateSubnets []privateSubnetConfig
+	if err := json.Unmarshal([]byte(privateSubnetsValue), &privateSubnets); err != nil {
+		t.Fatalf("expected valid private subnets JSON, got error: %v", err)
+	}
+	if len(privateSubnets) != 1 {
+		t.Fatalf("expected 1 private subnet entry, got %d", len(privateSubnets))
+	}
+	if privateSubnets[0].CIDRBlock != config.PrivateSubnetCIDR {
+		t.Fatalf("unexpected cidr block: %s", privateSubnets[0].CIDRBlock)
+	}
+	if privateSubnets[0].AvailabilityZone != config.AvailabilityZone {
+		t.Fatalf("unexpected availability zone: %s", privateSubnets[0].AvailabilityZone)
+	}
+	if privateSubnets[0].NatGatewayID != config.NatGatewayID {
+		t.Fatalf("unexpected nat gateway id: %s", privateSubnets[0].NatGatewayID)
+	}
 	if jobsSubmitted != 2 {
 		t.Fatalf("expected 2 jobs submitted, got %d", jobsSubmitted)
+	}
+
+	mcpECRDir := filepath.Join(titvoDir, "infra", "titvo-mcp-gateway", "aws", "ecr")
+	ecrPublisherDir := filepath.Join(titvoDir, "infra", "titvo-installer-ecr-publisher", "aws")
+	agentDir := filepath.Join(titvoDir, "infra", "titvo-agent-aws", "aws")
+	mcpAWSDir := filepath.Join(titvoDir, "infra", "titvo-mcp-gateway", "aws")
+
+	findDirIndex := func(dirs []string, target string) int {
+		for i, dir := range dirs {
+			if dir == target {
+				return i
+			}
+		}
+		return -1
+	}
+
+	mcpECRIndex := findDirIndex(terragruntApplyDirs, mcpECRDir)
+	if mcpECRIndex == -1 {
+		t.Fatalf("expected MCP gateway ECR apply to run")
+	}
+	ecrPublisherIndex := findDirIndex(terragruntApplyDirs, ecrPublisherDir)
+	if ecrPublisherIndex == -1 {
+		t.Fatalf("expected installer ecr publisher apply to run")
+	}
+	agentIndex := findDirIndex(terragruntApplyDirs, agentDir)
+	if agentIndex == -1 {
+		t.Fatalf("expected agent aws apply to run")
+	}
+	mcpAWSIndex := findDirIndex(terragruntApplyDirs, mcpAWSDir)
+	if mcpAWSIndex == -1 {
+		t.Fatalf("expected MCP gateway aws apply to run")
+	}
+	if mcpECRIndex >= ecrPublisherIndex {
+		t.Fatalf("expected MCP gateway ECR apply before installer ecr publisher apply")
+	}
+	if agentIndex >= mcpECRIndex {
+		t.Fatalf("expected agent aws apply before MCP gateway ECR apply")
+	}
+	if agentIndex >= ecrPublisherIndex {
+		t.Fatalf("expected agent aws apply before installer ecr publisher apply")
+	}
+	if mcpAWSIndex <= ecrPublisherIndex {
+		t.Fatalf("expected MCP gateway aws apply after installer ecr publisher apply")
+	}
+	if mcpRanNpm {
+		t.Fatalf("expected MCP gateway flow to skip npm build")
+	}
+	if mcpRanSubmodule {
+		t.Fatalf("expected MCP gateway flow to skip git submodule update")
 	}
 }
 
@@ -395,7 +490,7 @@ func TestDeployInfraAdditionalErrorPaths(t *testing.T) {
 			prepare: func(t *testing.T, titvoDir string) { createRequiredInfraDirs(t, titvoDir) },
 			mutate: func() {
 				putParameterFn = func(creds *AWSCredentials, path, value string) error {
-					if strings.Contains(path, "vpc-id") {
+					if strings.Contains(path, "vpc_id") {
 						return errors.New("ssm put fail")
 					}
 					return nil
@@ -418,7 +513,7 @@ func TestDeployInfraAdditionalErrorPaths(t *testing.T) {
 			prepare: func(t *testing.T, titvoDir string) { createRequiredInfraDirs(t, titvoDir) },
 			mutate: func() {
 				putParameterFn = func(creds *AWSCredentials, path, value string) error {
-					if strings.Contains(path, "secret-manager-arn") {
+					if strings.Contains(path, "secret/manager/arn") {
 						return errors.New("arn put fail")
 					}
 					return nil
@@ -470,7 +565,7 @@ func TestDeployInfraAdditionalErrorPaths(t *testing.T) {
 			prepare: func(t *testing.T, titvoDir string) { createRequiredInfraDirs(t, titvoDir) },
 			mutate: func() {
 				getParameterFn = func(creds *AWSCredentials, path string) (string, error) {
-					if strings.Contains(path, "job-queue") {
+					if strings.Contains(path, "job_queue_arn") {
 						return "", errors.New("queue fail")
 					}
 					return "job-def", nil
@@ -496,26 +591,39 @@ func TestDeployInfraAdditionalErrorPaths(t *testing.T) {
 			prepare: func(t *testing.T, titvoDir string) { createRequiredInfraDirs(t, titvoDir) },
 			mutate: func() {
 				downloadSourceFn = func(dir, sourceURL, component string) error {
-					if component == "MCP gateway" {
-						return errors.New("mcp download fail")
+					if component == "bitbucket code insights aws" {
+						return errors.New("bitbucket download fail")
 					}
 					return nil
 				}
 			},
-			expected: "failed to download MCP gateway: mcp download fail",
+			expected: "failed to download bitbucket code insights aws: bitbucket download fail",
 		},
 		{
 			name:    "first stage component fails",
 			prepare: func(t *testing.T, titvoDir string) { createRequiredInfraDirs(t, titvoDir) },
 			mutate: func() {
 				downloadSourceFn = func(dir, sourceURL, component string) error {
-					if component == "agent aws" {
-						return errors.New("agent download fail")
+					if component == "auth setup" {
+						return errors.New("auth download fail")
 					}
 					return nil
 				}
 			},
-			expected: "failed to download agent aws: agent download fail",
+			expected: "failed to download auth setup: auth download fail",
+		},
+		{
+			name:    "MCP ecr apply fails",
+			prepare: func(t *testing.T, titvoDir string) { createRequiredInfraDirs(t, titvoDir) },
+			mutate: func() {
+				executeWithOptionsFn = func(command string, options *ExecuteOptions, args ...string) error {
+					if command == "terragrunt" && options != nil && strings.Contains(options.WorkingDir, "titvo-mcp-gateway/aws/ecr") && len(args) > 1 && args[1] == "apply" {
+						return errors.New("mcp ecr apply fail")
+					}
+					return nil
+				}
+			},
+			expected: "terragrunt apply MCP gateway ECR failed: mcp ecr apply fail",
 		},
 		{
 			name: "ecr publisher dir missing",

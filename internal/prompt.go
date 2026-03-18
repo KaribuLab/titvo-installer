@@ -36,7 +36,16 @@ func askForCredentialsFile(awsRegion string) (*SetupConfig, error) {
 	if err != nil {
 		printErrorAndExit(err)
 	}
-	subnetID, err := askForInput("Enter your Subnet ID (Recommended to use a private subnet with int)", "Subnet ID")
+	printAskQuestion("These values will be used to create an isolated private network for Titvo.")
+	privateSubnetCIDR, err := askForInput("Enter your private subnet CIDR (e.g. 172.31.64.0/20)", "Private Subnet CIDR")
+	if err != nil {
+		printErrorAndExit(err)
+	}
+	availabilityZone, err := askForInput("Enter your Availability Zone (e.g. us-east-1a)", "Availability Zone")
+	if err != nil {
+		printErrorAndExit(err)
+	}
+	natGatewayID, err := askForInput("Enter your NAT Gateway ID (e.g. nat-xxxxxxxxxxxxxxxxx)", "NAT Gateway ID")
 	if err != nil {
 		printErrorAndExit(err)
 	}
@@ -61,12 +70,14 @@ func askForCredentialsFile(awsRegion string) (*SetupConfig, error) {
 			Profile: profile,
 			Region:  strings.TrimSpace(awsRegion),
 		},
-		VPCID:        vpcID,
-		SubnetID:     subnetID,
-		AesSecret:    string(aesSecret),
-		UserName:     userName,
-		OpenAIModel:  openAIModel,
-		OpenAIApiKey: string(openAIApiKey),
+		VPCID:             vpcID,
+		PrivateSubnetCIDR: privateSubnetCIDR,
+		AvailabilityZone:  availabilityZone,
+		NatGatewayID:      natGatewayID,
+		AesSecret:         string(aesSecret),
+		UserName:          userName,
+		OpenAIModel:       openAIModel,
+		OpenAIApiKey:      string(openAIApiKey),
 	}, nil
 }
 
