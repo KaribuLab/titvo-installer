@@ -65,19 +65,56 @@ func askForCredentialsFile(awsRegion string) (*SetupConfig, error) {
 	if err != nil {
 		printErrorAndExit(err)
 	}
+
+	bitbucketClientKey := ""
+	bitbucketClientSecret := ""
+	configureBitbucket, err := askForYesNo("Do you want to configure Bitbucket credentials? (y/N)")
+	if err != nil {
+		printErrorAndExit(err)
+	}
+	if configureBitbucket {
+		bitbucketClientKey, err = askForPassword("Enter Bitbucket Client Key", "Bitbucket Client Key")
+		if err != nil {
+			printErrorAndExit(err)
+		}
+		bitbucketClientSecret, err = askForPassword("Enter Bitbucket Client Secret", "Bitbucket Client Secret")
+		if err != nil {
+			printErrorAndExit(err)
+		}
+	} else {
+		printAskQuestion("Warning: Bitbucket credentials were not provided. Bitbucket integration deployment will be skipped.")
+	}
+
+	githubAccessToken := ""
+	configureGithub, err := askForYesNo("Do you want to configure GitHub credentials? (y/N)")
+	if err != nil {
+		printErrorAndExit(err)
+	}
+	if configureGithub {
+		githubAccessToken, err = askForPassword("Enter GitHub Access Token", "GitHub Access Token")
+		if err != nil {
+			printErrorAndExit(err)
+		}
+	} else {
+		printAskQuestion("Warning: GitHub access token was not provided. GitHub integration deployment will be skipped.")
+	}
+
 	return &SetupConfig{
 		AWSCredentialsLookup: &AWSFileCredentials{
 			Profile: profile,
 			Region:  strings.TrimSpace(awsRegion),
 		},
-		VPCID:             vpcID,
-		PrivateSubnetCIDR: privateSubnetCIDR,
-		AvailabilityZone:  availabilityZone,
-		NatGatewayID:      natGatewayID,
-		AesSecret:         string(aesSecret),
-		UserName:          userName,
-		OpenAIModel:       openAIModel,
-		OpenAIApiKey:      string(openAIApiKey),
+		VPCID:                 vpcID,
+		PrivateSubnetCIDR:     privateSubnetCIDR,
+		AvailabilityZone:      availabilityZone,
+		NatGatewayID:          natGatewayID,
+		AesSecret:             string(aesSecret),
+		UserName:              userName,
+		OpenAIModel:           openAIModel,
+		OpenAIApiKey:          string(openAIApiKey),
+		BitbucketClientKey:    string(bitbucketClientKey),
+		BitbucketClientSecret: string(bitbucketClientSecret),
+		GithubAccessToken:     string(githubAccessToken),
 	}, nil
 }
 
@@ -117,6 +154,24 @@ func askForPassword(question string, inputName string) (string, error) {
 		return "", fmt.Errorf("%s is empty", inputName)
 	}
 	return strings.TrimSpace(string(answer)), nil
+}
+
+func askForYesNo(question string) (bool, error) {
+	printAskQuestion(question)
+	reader := bufio.NewReader(os.Stdin)
+	answer, err := reader.ReadString('\n')
+	if err != nil {
+		printError(fmt.Errorf("error reading yes/no input: %v", err))
+		return false, err
+	}
+	normalized := strings.ToLower(strings.TrimSpace(answer))
+	if normalized == "" || normalized == "n" || normalized == "no" {
+		return false, nil
+	}
+	if normalized == "y" || normalized == "yes" {
+		return true, nil
+	}
+	return false, fmt.Errorf("invalid choice: %s", strings.TrimSpace(answer))
 }
 
 type choiceCallback func() (any, error)

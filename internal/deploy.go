@@ -91,14 +91,17 @@ func DownloadInstallerECRPublisherSource(dir string) error {
 }
 
 type DeployConfig struct {
-	AWSCredentials    AWSCredentials
-	InstallToolConfig InstallToolConfig
-	VPCID             string
-	PrivateSubnetCIDR string
-	AvailabilityZone  string
-	NatGatewayID      string
-	AESSecret         string
-	Debug             bool
+	AWSCredentials        AWSCredentials
+	InstallToolConfig     InstallToolConfig
+	VPCID                 string
+	PrivateSubnetCIDR     string
+	AvailabilityZone      string
+	NatGatewayID          string
+	AESSecret             string
+	BitbucketClientKey    string
+	BitbucketClientSecret string
+	GithubAccessToken     string
+	Debug                 bool
 }
 
 func DeployInfra(config DeployConfig) error {

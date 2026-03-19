@@ -27,6 +27,9 @@ func successfulDeployStubs() {
 	submitBatchJobFn = func(creds *AWSCredentials, jobName, jobQueue, jobDefinition string, envVars map[string]string) error {
 		return nil
 	}
+	putRecordFn = func(creds *AWSCredentials, tableName string, item map[string]interface{}) error {
+		return nil
+	}
 }
 
 func validDeployConfig(titvoDir string) DeployConfig {
@@ -48,7 +51,7 @@ func validDeployConfig(titvoDir string) DeployConfig {
 		PrivateSubnetCIDR: "172.31.64.0/20",
 		AvailabilityZone:  "us-east-1a",
 		NatGatewayID:      "nat-00000000000000001",
-		AESSecret:         "secret",
+		AESSecret:         "12345678901234567890123456789012",
 		Debug:             false,
 	}
 }
@@ -61,6 +64,7 @@ func withRuntimeStubs(t *testing.T) {
 	origCreateSecret := createSecretFn
 	origGetParam := getParameterFn
 	origSubmit := submitBatchJobFn
+	origPutRecord := putRecordFn
 	origDownload := downloadSourceFn
 	origMkdirAll := mkdirAllFn
 
@@ -71,6 +75,7 @@ func withRuntimeStubs(t *testing.T) {
 		createSecretFn = origCreateSecret
 		getParameterFn = origGetParam
 		submitBatchJobFn = origSubmit
+		putRecordFn = origPutRecord
 		downloadSourceFn = origDownload
 		mkdirAllFn = origMkdirAll
 	})
@@ -447,12 +452,196 @@ func TestDeployInfraGetParameterError(t *testing.T) {
 	}
 }
 
+func TestDeployInfraOptionalSCMIntegrations(t *testing.T) {
+	tests := []struct {
+		name                       string
+		bitbucketClientKey         string
+		bitbucketClientSecret      string
+		githubAccessToken          string
+		expectBitbucketApply       bool
+		expectGithubApply          bool
+		expectedDynamoParameterIDs []string
+	}{
+		{
+			name:                       "none provided",
+			bitbucketClientKey:         "",
+			bitbucketClientSecret:      "",
+			githubAccessToken:          "",
+			expectBitbucketApply:       false,
+			expectGithubApply:          false,
+			expectedDynamoParameterIDs: []string{},
+		},
+		{
+			name:                       "only bitbucket provided",
+			bitbucketClientKey:         "bb-key",
+			bitbucketClientSecret:      "bb-secret",
+			githubAccessToken:          "",
+			expectBitbucketApply:       true,
+			expectGithubApply:          false,
+			expectedDynamoParameterIDs: []string{"bitbucket_client_credentials"},
+		},
+		{
+			name:                       "only github provided",
+			bitbucketClientKey:         "",
+			bitbucketClientSecret:      "",
+			githubAccessToken:          "gh-token",
+			expectBitbucketApply:       false,
+			expectGithubApply:          true,
+			expectedDynamoParameterIDs: []string{"github_access_token"},
+		},
+		{
+			name:                       "both provided",
+			bitbucketClientKey:         "bb-key",
+			bitbucketClientSecret:      "bb-secret",
+			githubAccessToken:          "gh-token",
+			expectBitbucketApply:       true,
+			expectGithubApply:          true,
+			expectedDynamoParameterIDs: []string{"bitbucket_client_credentials", "github_access_token"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			withRuntimeStubs(t)
+			titvoDir := t.TempDir()
+			createRequiredInfraDirs(t, titvoDir)
+			successfulDeployStubs()
+
+			scmCreateSecretCalled := false
+			dynamoValues := map[string]string{}
+			dynamoParameterIDs := []string{}
+			events := []string{}
+			terragruntApplyDirs := []string{}
+
+			createSecretFn = func(creds *AWSCredentials, name, secretValue string) (string, error) {
+				if name != "/tvo/security-scan/prod/aes_secret" {
+					scmCreateSecretCalled = true
+				}
+				return "arn:" + name, nil
+			}
+			putRecordFn = func(creds *AWSCredentials, tableName string, item map[string]interface{}) error {
+				if tableName != "tvo-security-scan-parameter-prod" {
+					t.Fatalf("unexpected table name: %s", tableName)
+				}
+				parameterID, ok := item["parameter_id"].(string)
+				if !ok {
+					t.Fatalf("parameter_id missing or invalid")
+				}
+				value, ok := item["value"].(string)
+				if !ok {
+					t.Fatalf("value missing or invalid")
+				}
+				dynamoParameterIDs = append(dynamoParameterIDs, parameterID)
+				dynamoValues[parameterID] = value
+				events = append(events, "put_record")
+				return nil
+			}
+			executeWithOptionsFn = func(command string, options *ExecuteOptions, args ...string) error {
+				if command == "terragrunt" && options != nil && len(args) > 1 && args[0] == "run-all" && args[1] == "apply" {
+					terragruntApplyDirs = append(terragruntApplyDirs, options.WorkingDir)
+					if strings.Contains(options.WorkingDir, filepath.Join("prod", "us-east-1")) {
+						events = append(events, "base_apply")
+					}
+				}
+				return nil
+			}
+
+			config := validDeployConfig(titvoDir)
+			config.BitbucketClientKey = tc.bitbucketClientKey
+			config.BitbucketClientSecret = tc.bitbucketClientSecret
+			config.GithubAccessToken = tc.githubAccessToken
+			if err := deployInfra(config); err != nil {
+				t.Fatalf("expected no error, got %v", err)
+			}
+
+			bitbucketDir := filepath.Join(titvoDir, "infra", "titvo-bitbucket-code-insights-aws", "aws")
+			githubDir := filepath.Join(titvoDir, "infra", "titvo-github-issue-aws", "aws")
+
+			foundBitbucketApply := false
+			foundGithubApply := false
+			for _, applyDir := range terragruntApplyDirs {
+				if applyDir == bitbucketDir {
+					foundBitbucketApply = true
+				}
+				if applyDir == githubDir {
+					foundGithubApply = true
+				}
+			}
+
+			if foundBitbucketApply != tc.expectBitbucketApply {
+				t.Fatalf("unexpected bitbucket apply state: got %v", foundBitbucketApply)
+			}
+			if foundGithubApply != tc.expectGithubApply {
+				t.Fatalf("unexpected github apply state: got %v", foundGithubApply)
+			}
+
+			if scmCreateSecretCalled {
+				t.Fatalf("expected no SCM secret manager writes")
+			}
+
+			for _, expectedParameterID := range tc.expectedDynamoParameterIDs {
+				found := false
+				for _, parameterID := range dynamoParameterIDs {
+					if parameterID == expectedParameterID {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Fatalf("expected dynamodb parameter id %s to be written", expectedParameterID)
+				}
+			}
+
+			if tc.bitbucketClientKey != "" && tc.bitbucketClientSecret != "" {
+				expectedBitbucketJSON, err := json.Marshal(map[string]string{"key": tc.bitbucketClientKey, "secret": tc.bitbucketClientSecret})
+				if err != nil {
+					t.Fatalf("failed to marshal expected bitbucket json: %v", err)
+				}
+				expectedEncrypted, err := encrypt(string(expectedBitbucketJSON), config.AESSecret)
+				if err != nil {
+					t.Fatalf("failed to encrypt expected bitbucket json: %v", err)
+				}
+				actualEncrypted := dynamoValues["bitbucket_client_credentials"]
+				if actualEncrypted != expectedEncrypted {
+					t.Fatalf("unexpected encrypted bitbucket credentials")
+				}
+			}
+
+			if tc.githubAccessToken != "" {
+				expectedEncrypted, err := encrypt(tc.githubAccessToken, config.AESSecret)
+				if err != nil {
+					t.Fatalf("failed to encrypt expected github token: %v", err)
+				}
+				actualEncrypted := dynamoValues["github_access_token"]
+				if actualEncrypted != expectedEncrypted {
+					t.Fatalf("unexpected encrypted github access token")
+				}
+			}
+
+			baseApplyIndex := -1
+			firstPutRecordIndex := -1
+			for i, event := range events {
+				if event == "base_apply" && baseApplyIndex == -1 {
+					baseApplyIndex = i
+				}
+				if event == "put_record" && firstPutRecordIndex == -1 {
+					firstPutRecordIndex = i
+				}
+			}
+			if firstPutRecordIndex != -1 && (baseApplyIndex == -1 || firstPutRecordIndex <= baseApplyIndex) {
+				t.Fatalf("expected dynamodb writes to happen after base infra apply")
+			}
+		})
+	}
+}
+
 func TestDeployInfraAdditionalErrorPaths(t *testing.T) {
 	tests := []struct {
-		name     string
-		prepare  func(t *testing.T, titvoDir string)
-		mutate   func()
-		expected string
+		name         string
+		prepare      func(t *testing.T, titvoDir string)
+		mutate       func()
+		mutateConfig func(config *DeployConfig)
+		expected     string
 	}{
 		{
 			name: "base source dir missing",
@@ -461,8 +650,9 @@ func TestDeployInfraAdditionalErrorPaths(t *testing.T) {
 					t.Fatal(err)
 				}
 			},
-			mutate:   func() {},
-			expected: "source directory",
+			mutate:       func() {},
+			mutateConfig: func(config *DeployConfig) {},
+			expected:     "source directory",
 		},
 		{
 			name:    "mkdir infra fails",
@@ -470,7 +660,8 @@ func TestDeployInfraAdditionalErrorPaths(t *testing.T) {
 			mutate: func() {
 				mkdirAllFn = func(path string, perm os.FileMode) error { return errors.New("mkdir fail") }
 			},
-			expected: "mkdir fail",
+			mutateConfig: func(config *DeployConfig) {},
+			expected:     "mkdir fail",
 		},
 		{
 			name:    "plugin cache mkdir fails",
@@ -483,7 +674,8 @@ func TestDeployInfraAdditionalErrorPaths(t *testing.T) {
 					return os.MkdirAll(path, perm)
 				}
 			},
-			expected: "failed to create plugin cache directory: plugin mkdir fail",
+			mutateConfig: func(config *DeployConfig) {},
+			expected:     "failed to create plugin cache directory: plugin mkdir fail",
 		},
 		{
 			name:    "put parameter fails",
@@ -496,7 +688,8 @@ func TestDeployInfraAdditionalErrorPaths(t *testing.T) {
 					return nil
 				}
 			},
-			expected: "failed to put parameter vpc-id: ssm put fail",
+			mutateConfig: func(config *DeployConfig) {},
+			expected:     "failed to put parameter vpc-id: ssm put fail",
 		},
 		{
 			name:    "create secret fails",
@@ -506,7 +699,8 @@ func TestDeployInfraAdditionalErrorPaths(t *testing.T) {
 					return "", errors.New("secret fail")
 				}
 			},
-			expected: "failed to create secret aes_secret: secret fail",
+			mutateConfig: func(config *DeployConfig) {},
+			expected:     "failed to create secret aes_secret: secret fail",
 		},
 		{
 			name:    "put encryption key arn fails",
@@ -519,7 +713,41 @@ func TestDeployInfraAdditionalErrorPaths(t *testing.T) {
 					return nil
 				}
 			},
-			expected: "failed to put parameter encryption-key-arn: arn put fail",
+			mutateConfig: func(config *DeployConfig) {},
+			expected:     "failed to put parameter encryption-key-arn: arn put fail",
+		},
+		{
+			name:    "put bitbucket dynamo parameter fails",
+			prepare: func(t *testing.T, titvoDir string) { createRequiredInfraDirs(t, titvoDir) },
+			mutate: func() {
+				putRecordFn = func(creds *AWSCredentials, tableName string, item map[string]interface{}) error {
+					if item["parameter_id"] == "bitbucket_client_credentials" {
+						return errors.New("bitbucket dynamo put fail")
+					}
+					return nil
+				}
+			},
+			mutateConfig: func(config *DeployConfig) {
+				config.BitbucketClientKey = "bb-key"
+				config.BitbucketClientSecret = "bb-secret"
+			},
+			expected: "failed to put scm parameter bitbucket_client_credentials in dynamodb: bitbucket dynamo put fail",
+		},
+		{
+			name:    "put github dynamo parameter fails",
+			prepare: func(t *testing.T, titvoDir string) { createRequiredInfraDirs(t, titvoDir) },
+			mutate: func() {
+				putRecordFn = func(creds *AWSCredentials, tableName string, item map[string]interface{}) error {
+					if item["parameter_id"] == "github_access_token" {
+						return errors.New("github dynamo put fail")
+					}
+					return nil
+				}
+			},
+			mutateConfig: func(config *DeployConfig) {
+				config.GithubAccessToken = "gh-token"
+			},
+			expected: "failed to put scm parameter github_access_token in dynamodb: github dynamo put fail",
 		},
 		{
 			name:    "base terragrunt fails",
@@ -532,7 +760,8 @@ func TestDeployInfraAdditionalErrorPaths(t *testing.T) {
 					return nil
 				}
 			},
-			expected: "terragrunt apply failed: tg fail",
+			mutateConfig: func(config *DeployConfig) {},
+			expected:     "terragrunt apply failed: tg fail",
 		},
 		{
 			name:    "download ecr publisher fails",
@@ -545,7 +774,8 @@ func TestDeployInfraAdditionalErrorPaths(t *testing.T) {
 					return nil
 				}
 			},
-			expected: "failed to download installer ecr publisher: download fail",
+			mutateConfig: func(config *DeployConfig) {},
+			expected:     "failed to download installer ecr publisher: download fail",
 		},
 		{
 			name:    "ecr apply fails",
@@ -558,7 +788,8 @@ func TestDeployInfraAdditionalErrorPaths(t *testing.T) {
 					return nil
 				}
 			},
-			expected: "terragrunt apply installer ecr publisher failed: ecr apply fail",
+			mutateConfig: func(config *DeployConfig) {},
+			expected:     "terragrunt apply installer ecr publisher failed: ecr apply fail",
 		},
 		{
 			name:    "get queue arn fails",
@@ -571,7 +802,8 @@ func TestDeployInfraAdditionalErrorPaths(t *testing.T) {
 					return "job-def", nil
 				}
 			},
-			expected: "failed to get ecr publisher job queue arn: queue fail",
+			mutateConfig: func(config *DeployConfig) {},
+			expected:     "failed to get ecr publisher job queue arn: queue fail",
 		},
 		{
 			name:    "destroy ecr publisher fails",
@@ -584,7 +816,8 @@ func TestDeployInfraAdditionalErrorPaths(t *testing.T) {
 					return nil
 				}
 			},
-			expected: "terragrunt destroy installer ecr publisher failed: destroy fail",
+			mutateConfig: func(config *DeployConfig) {},
+			expected:     "terragrunt destroy installer ecr publisher failed: destroy fail",
 		},
 		{
 			name:    "second stage component fails",
@@ -596,6 +829,10 @@ func TestDeployInfraAdditionalErrorPaths(t *testing.T) {
 					}
 					return nil
 				}
+			},
+			mutateConfig: func(config *DeployConfig) {
+				config.BitbucketClientKey = "bb-key"
+				config.BitbucketClientSecret = "bb-secret"
 			},
 			expected: "failed to download bitbucket code insights aws: bitbucket download fail",
 		},
@@ -610,7 +847,8 @@ func TestDeployInfraAdditionalErrorPaths(t *testing.T) {
 					return nil
 				}
 			},
-			expected: "failed to download auth setup: auth download fail",
+			mutateConfig: func(config *DeployConfig) {},
+			expected:     "failed to download auth setup: auth download fail",
 		},
 		{
 			name:    "MCP ecr apply fails",
@@ -623,7 +861,8 @@ func TestDeployInfraAdditionalErrorPaths(t *testing.T) {
 					return nil
 				}
 			},
-			expected: "terragrunt apply MCP gateway ECR failed: mcp ecr apply fail",
+			mutateConfig: func(config *DeployConfig) {},
+			expected:     "terragrunt apply MCP gateway ECR failed: mcp ecr apply fail",
 		},
 		{
 			name: "ecr publisher dir missing",
@@ -633,8 +872,9 @@ func TestDeployInfraAdditionalErrorPaths(t *testing.T) {
 					t.Fatal(err)
 				}
 			},
-			mutate:   func() {},
-			expected: "installer ecr publisher directory",
+			mutate:       func() {},
+			mutateConfig: func(config *DeployConfig) {},
+			expected:     "installer ecr publisher directory",
 		},
 	}
 
@@ -645,7 +885,9 @@ func TestDeployInfraAdditionalErrorPaths(t *testing.T) {
 			successfulDeployStubs()
 			tc.prepare(t, titvoDir)
 			tc.mutate()
-			err := deployInfra(validDeployConfig(titvoDir))
+			config := validDeployConfig(titvoDir)
+			tc.mutateConfig(&config)
+			err := deployInfra(config)
 			if err == nil || !strings.Contains(err.Error(), tc.expected) {
 				t.Fatalf("unexpected error: %v", err)
 			}

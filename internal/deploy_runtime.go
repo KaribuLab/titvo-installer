@@ -20,6 +20,7 @@ var putParameterFn = PutParameter
 var createSecretFn = CreateSecret
 var getParameterFn = GetParameter
 var submitBatchJobFn = SubmitBatchJob
+var putRecordFn = PutRecord
 var mkdirAllFn = os.MkdirAll
 
 func downloadSource(dir, sourceURL, component string) error {
@@ -202,6 +203,55 @@ func deployInfra(config DeployConfig) error {
 		return fmt.Errorf("terragrunt apply failed: %w", err)
 	}
 
+	type scmSecretResult struct {
+		parameterID string
+		value       string
+	}
+
+	scmSecretResults := []scmSecretResult{}
+
+	if config.BitbucketClientKey == "" || config.BitbucketClientSecret == "" {
+		printAskQuestion("Warning: Bitbucket credentials were not provided. Bitbucket integration deployment will be skipped.")
+	} else {
+		bitbucketCredentialsJSON, err := json.Marshal(map[string]string{
+			"key":    config.BitbucketClientKey,
+			"secret": config.BitbucketClientSecret,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to serialize bitbucket credentials: %w", err)
+		}
+		encryptedBitbucketCredentials, err := encrypt(string(bitbucketCredentialsJSON), config.AESSecret)
+		if err != nil {
+			return fmt.Errorf("failed to encrypt bitbucket credentials: %w", err)
+		}
+		scmSecretResults = append(scmSecretResults, scmSecretResult{
+			parameterID: "bitbucket_client_credentials",
+			value:       encryptedBitbucketCredentials,
+		})
+	}
+
+	if config.GithubAccessToken == "" {
+		printAskQuestion("Warning: GitHub access token was not provided. GitHub integration deployment will be skipped.")
+	} else {
+		encryptedGithubAccessToken, err := encrypt(config.GithubAccessToken, config.AESSecret)
+		if err != nil {
+			return fmt.Errorf("failed to encrypt github access token: %w", err)
+		}
+		scmSecretResults = append(scmSecretResults, scmSecretResult{
+			parameterID: "github_access_token",
+			value:       encryptedGithubAccessToken,
+		})
+	}
+
+	for _, secret := range scmSecretResults {
+		if err := putRecordFn(&config.AWSCredentials, "tvo-security-scan-parameter-prod", map[string]interface{}{
+			"parameter_id": secret.parameterID,
+			"value":        secret.value,
+		}); err != nil {
+			return fmt.Errorf("failed to put scm parameter %s in dynamodb: %w", secret.parameterID, err)
+		}
+	}
+
 	firstStageComponents := []struct {
 		repoDirName    string
 		label          string
@@ -276,10 +326,22 @@ func deployInfra(config DeployConfig) error {
 		label       string
 		downloadFn  func(string) error
 	}{
-		{repoDirName: "titvo-bitbucket-code-insights-aws", label: "bitbucket code insights aws", downloadFn: DownloadBitbucketCodeInsightsAWSSource},
 		{repoDirName: "titvo-git-commit-files-aws", label: "git commit files aws", downloadFn: DownloadGitCommitFilesAWSSource},
-		{repoDirName: "titvo-github-issue-aws", label: "github issue aws", downloadFn: DownloadGithubIssueAWSSource},
 		{repoDirName: "titvo-issue-report-aws", label: "issue report aws", downloadFn: DownloadIssueReportAWSSource},
+	}
+	if config.BitbucketClientKey != "" && config.BitbucketClientSecret != "" {
+		secondStageComponents = append(secondStageComponents, struct {
+			repoDirName string
+			label       string
+			downloadFn  func(string) error
+		}{repoDirName: "titvo-bitbucket-code-insights-aws", label: "bitbucket code insights aws", downloadFn: DownloadBitbucketCodeInsightsAWSSource})
+	}
+	if config.GithubAccessToken != "" {
+		secondStageComponents = append(secondStageComponents, struct {
+			repoDirName string
+			label       string
+			downloadFn  func(string) error
+		}{repoDirName: "titvo-github-issue-aws", label: "github issue aws", downloadFn: DownloadGithubIssueAWSSource})
 	}
 	for _, component := range secondStageComponents {
 		if err := deployNodeComponent(infraDir, component.repoDirName, component.label, component.downloadFn, env, 0, false); err != nil {

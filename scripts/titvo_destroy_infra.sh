@@ -46,6 +46,142 @@ confirm() {
     [[ "$response" =~ ^[Yy]$ ]]
 }
 
+disable_tvo_ecs_clusters() {
+    log_info "Paso 2.5/4: Deshabilitando clusters ECS con prefijo 'tvo'"
+
+    local clusters_response
+    clusters_response=$(aws ecs list-clusters --region "$AWS_REGION" --output json 2>/dev/null || echo '{"clusterArns":[]}')
+
+    mapfile -t CLUSTERS < <(echo "$clusters_response" | jq -r '.clusterArns[]?')
+    if [ "${#CLUSTERS[@]}" -eq 0 ]; then
+        log_info "No se encontraron clusters ECS"
+        echo ""
+        return
+    fi
+
+    local found_tvo=false
+    for cluster_arn in "${CLUSTERS[@]}"; do
+        cluster_name="${cluster_arn##*/}"
+        if [[ ! "$cluster_name" =~ ^tvo ]]; then
+            continue
+        fi
+
+        found_tvo=true
+        log_info "Procesando cluster ECS: $cluster_name"
+
+        mapfile -t SERVICES < <(aws ecs list-services \
+            --cluster "$cluster_arn" \
+            --region "$AWS_REGION" \
+            --query 'serviceArns[]' \
+            --output text 2>/dev/null | tr '\t' '\n' | sed '/^None$/d;/^$/d')
+
+        for service_arn in "${SERVICES[@]}"; do
+            service_name="${service_arn##*/}"
+            log_info "Escalando servicio a 0: $service_name"
+            aws ecs update-service \
+                --cluster "$cluster_arn" \
+                --service "$service_arn" \
+                --desired-count 0 \
+                --region "$AWS_REGION" > /dev/null 2>&1 || {
+                log_warning "No se pudo escalar $service_name a 0"
+                ERRORS=$((ERRORS + 1))
+            }
+
+            aws ecs wait services-stable \
+                --cluster "$cluster_arn" \
+                --services "$service_arn" \
+                --region "$AWS_REGION" > /dev/null 2>&1 || {
+                log_warning "Timeout esperando estabilidad de $service_name"
+            }
+
+            log_info "Eliminando servicio ECS: $service_name"
+            aws ecs delete-service \
+                --cluster "$cluster_arn" \
+                --service "$service_arn" \
+                --force \
+                --region "$AWS_REGION" > /dev/null 2>&1 || {
+                log_warning "No se pudo eliminar servicio $service_name"
+                ERRORS=$((ERRORS + 1))
+            }
+        done
+
+        mapfile -t TASKS < <(aws ecs list-tasks \
+            --cluster "$cluster_arn" \
+            --region "$AWS_REGION" \
+            --query 'taskArns[]' \
+            --output text 2>/dev/null | tr '\t' '\n' | sed '/^None$/d;/^$/d')
+
+        for task_arn in "${TASKS[@]}"; do
+            task_id="${task_arn##*/}"
+            log_info "Deteniendo task ECS: $task_id"
+            aws ecs stop-task \
+                --cluster "$cluster_arn" \
+                --task "$task_arn" \
+                --reason "titvo destroy pre-drain" \
+                --region "$AWS_REGION" > /dev/null 2>&1 || {
+                log_warning "No se pudo detener task $task_id"
+                ERRORS=$((ERRORS + 1))
+            }
+        done
+
+        log_info "Intentando eliminar cluster ECS: $cluster_name"
+        aws ecs delete-cluster \
+            --cluster "$cluster_arn" \
+            --region "$AWS_REGION" > /dev/null 2>&1 || {
+            log_warning "No se pudo eliminar cluster $cluster_name (Terraform debería intentar destruirlo)"
+        }
+    done
+
+    if [ "$found_tvo" = false ]; then
+        log_info "No se encontraron clusters ECS con prefijo 'tvo'"
+    else
+        log_success "Finalizó pre-proceso ECS"
+    fi
+    echo ""
+}
+
+delete_cloudmap_namespace_services() {
+    local namespace_name="internal.titvo.com"
+    log_info "Paso 2.6/4: Eliminando servicios Cloud Map del namespace '$namespace_name'"
+
+    local namespace_id
+    namespace_id=$(aws servicediscovery list-namespaces \
+        --region "$AWS_REGION" \
+        --query "Namespaces[?Name=='$namespace_name'].Id | [0]" \
+        --output text 2>/dev/null || echo "None")
+
+    if [ -z "$namespace_id" ] || [ "$namespace_id" = "None" ]; then
+        log_info "Namespace '$namespace_name' no encontrado"
+        echo ""
+        return
+    fi
+
+    mapfile -t SD_SERVICE_IDS < <(aws servicediscovery list-services \
+        --region "$AWS_REGION" \
+        --filters "Name=NAMESPACE_ID,Values=$namespace_id,Condition=EQ" \
+        --query 'Services[].Id' \
+        --output text 2>/dev/null | tr '\t' '\n' | sed '/^None$/d;/^$/d')
+
+    if [ "${#SD_SERVICE_IDS[@]}" -eq 0 ]; then
+        log_info "Namespace '$namespace_name' no tiene servicios asociados"
+        echo ""
+        return
+    fi
+
+    for service_id in "${SD_SERVICE_IDS[@]}"; do
+        log_info "Eliminando Cloud Map service: $service_id"
+        aws servicediscovery delete-service \
+            --id "$service_id" \
+            --region "$AWS_REGION" > /dev/null 2>&1 || {
+            log_warning "No se pudo eliminar Cloud Map service $service_id"
+            ERRORS=$((ERRORS + 1))
+        }
+    done
+
+    log_success "Finalizó limpieza de servicios Cloud Map para '$namespace_name'"
+    echo ""
+}
+
 # Banner inicial
 echo "=================================================="
 echo "  🗑️  TITVO Infrastructure Destroyer"
@@ -100,7 +236,7 @@ ERRORS=0
 # ========================================
 # 1. Limpiar ECR Repository
 # ========================================
-log_info "Paso 1/3: Limpiando repositorio ECR"
+log_info "Paso 1/4: Limpiando repositorio ECR"
 if aws ecr describe-repositories \
     --repository-names "$REPO_NAME" \
     --region "$AWS_REGION" \
@@ -135,7 +271,7 @@ echo ""
 # ========================================
 # 2. Limpiar S3 Bucket
 # ========================================
-log_info "Paso 2/3: Limpiando bucket S3"
+log_info "Paso 2/4: Limpiando bucket S3"
 if aws s3api head-bucket --bucket "$CLI_FILES_BUCKET_NAME" 2>/dev/null; then
     log_info "Bucket '$CLI_FILES_BUCKET_NAME' encontrado"
 
@@ -200,10 +336,13 @@ else
 fi
 echo ""
 
+disable_tvo_ecs_clusters
+delete_cloudmap_namespace_services
+
 # ========================================
 # 3. Destruir infraestructura Terraform/Terragrunt
 # ========================================
-log_info "Paso 3/3: Destruyendo infraestructura Terraform/Terragrunt"
+log_info "Paso 3/4: Destruyendo infraestructura Terraform/Terragrunt"
 
 # Verificar que existe el directorio de infraestructura
 if [ ! -d "$INFRA_DIR" ]; then
@@ -215,12 +354,23 @@ else
     # Lista de módulos a destruir en orden
     MODULES=(
         "titvo-auth-setup-aws/aws"
-        "titvo-security-scan/aws"
+        "titvo-agent-aws/aws"
+        "titvo-mcp-gateway-aws/aws"
         "titvo-task-cli-files-aws/aws"
         "titvo-task-status-aws/aws"
         "titvo-task-trigger-aws/aws"
         "titvo-security-scan-infra-aws/prod/us-east-1"
     )
+
+    if [ -d titvo-security-scan-infra-aws/prod/us-east-1/ssm/parameter/lookup ]; then
+        cd titvo-security-scan-infra-aws/prod/us-east-1/ssm/parameter/lookup
+        terragrunt apply
+        cd -
+    fi
+
+    if [ -d titvo-security-scan-infra-aws/prod/us-east-1/ssm/parameter/upsert ]; then
+        rm -rf titvo-security-scan-infra-aws/prod/us-east-1/ssm/parameter/upsert
+    fi
 
     TOTAL_MODULES=${#MODULES[@]}
     CURRENT=0
@@ -259,6 +409,65 @@ else
             log_warning "Módulo $MODULE_NAME no encontrado (ya eliminado o no instalado)"
         fi
     done
+fi
+
+# ========================================
+# 4. Limpiar parámetros SSM
+# ========================================
+log_info "Paso 4/4: Eliminando parámetros SSM de infraestructura"
+SSM_BASE_PATH="/tvo/security-scan/prod/infra"
+NEXT_TOKEN=""
+DELETED_PARAMS=0
+
+while true; do
+    if [ -n "$NEXT_TOKEN" ]; then
+        SSM_RESPONSE=$(aws ssm get-parameters-by-path \
+            --path "$SSM_BASE_PATH" \
+            --recursive \
+            --with-decryption \
+            --region "$AWS_REGION" \
+            --max-results 10 \
+            --next-token "$NEXT_TOKEN" \
+            --output json 2>/dev/null) || {
+            log_error "Error al listar parámetros SSM en '$SSM_BASE_PATH'"
+            ERRORS=$((ERRORS + 1))
+            break
+        }
+    else
+        SSM_RESPONSE=$(aws ssm get-parameters-by-path \
+            --path "$SSM_BASE_PATH" \
+            --recursive \
+            --with-decryption \
+            --region "$AWS_REGION" \
+            --max-results 10 \
+            --output json 2>/dev/null) || {
+            log_error "Error al listar parámetros SSM en '$SSM_BASE_PATH'"
+            ERRORS=$((ERRORS + 1))
+            break
+        }
+    fi
+
+    PARAM_NAMES=$(echo "$SSM_RESPONSE" | jq -r '.Parameters[].Name // empty')
+    if [ -n "$PARAM_NAMES" ]; then
+        mapfile -t PARAM_ARRAY <<< "$PARAM_NAMES"
+        if aws ssm delete-parameters --region "$AWS_REGION" --names "${PARAM_ARRAY[@]}" > /dev/null 2>&1; then
+            DELETED_PARAMS=$((DELETED_PARAMS + ${#PARAM_ARRAY[@]}))
+        else
+            log_error "Error al eliminar parámetros SSM en '$SSM_BASE_PATH'"
+            ERRORS=$((ERRORS + 1))
+        fi
+    fi
+
+    NEXT_TOKEN=$(echo "$SSM_RESPONSE" | jq -r '.NextToken // empty')
+    if [ -z "$NEXT_TOKEN" ]; then
+        break
+    fi
+done
+
+if [ "$DELETED_PARAMS" -gt 0 ]; then
+    log_success "Parámetros SSM eliminados: $DELETED_PARAMS"
+else
+    log_info "No se encontraron parámetros SSM en '$SSM_BASE_PATH'"
 fi
 
 # ========================================
