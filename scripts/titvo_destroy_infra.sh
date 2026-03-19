@@ -47,7 +47,7 @@ confirm() {
 }
 
 disable_tvo_ecs_clusters() {
-    log_info "Paso 2.5/4: Deshabilitando clusters ECS con prefijo 'tvo'"
+    log_info "Paso 2.5/5: Deshabilitando clusters ECS con prefijo 'tvo'"
 
     local clusters_response
     clusters_response=$(aws ecs list-clusters --region "$AWS_REGION" --output json 2>/dev/null || echo '{"clusterArns":[]}')
@@ -142,7 +142,7 @@ disable_tvo_ecs_clusters() {
 
 delete_cloudmap_namespace_services() {
     local namespace_name="internal.titvo.com"
-    log_info "Paso 2.6/4: Eliminando servicios Cloud Map del namespace '$namespace_name'"
+    log_info "Paso 2.6/5: Eliminando servicios Cloud Map del namespace '$namespace_name'"
 
     local namespace_id
     namespace_id=$(aws servicediscovery list-namespaces \
@@ -197,7 +197,7 @@ fi
 source .env
 
 # Verificar variables requeridas
-REQUIRED_VARS=("AWS_STAGE" "AWS_REGION")
+REQUIRED_VARS=("AWS_STAGE" "AWS_REGION" "AWS_ACCOUNT_ID")
 for var in "${REQUIRED_VARS[@]}"; do
     if [ -z "${!var}" ]; then
         log_error "Variable $var no está definida en .env"
@@ -236,7 +236,7 @@ ERRORS=0
 # ========================================
 # 1. Limpiar ECR Repository
 # ========================================
-log_info "Paso 1/4: Limpiando repositorio ECR"
+log_info "Paso 1/5: Limpiando repositorio ECR"
 if aws ecr describe-repositories \
     --repository-names "$REPO_NAME" \
     --region "$AWS_REGION" \
@@ -271,7 +271,7 @@ echo ""
 # ========================================
 # 2. Limpiar S3 Bucket
 # ========================================
-log_info "Paso 2/4: Limpiando bucket S3"
+log_info "Paso 2/5: Limpiando bucket S3"
 if aws s3api head-bucket --bucket "$CLI_FILES_BUCKET_NAME" 2>/dev/null; then
     log_info "Bucket '$CLI_FILES_BUCKET_NAME' encontrado"
 
@@ -342,7 +342,7 @@ delete_cloudmap_namespace_services
 # ========================================
 # 3. Destruir infraestructura Terraform/Terragrunt
 # ========================================
-log_info "Paso 3/4: Destruyendo infraestructura Terraform/Terragrunt"
+log_info "Paso 3/5: Destruyendo infraestructura Terraform/Terragrunt"
 
 # Verificar que existe el directorio de infraestructura
 if [ ! -d "$INFRA_DIR" ]; then
@@ -414,7 +414,7 @@ fi
 # ========================================
 # 4. Limpiar parámetros SSM
 # ========================================
-log_info "Paso 4/4: Eliminando parámetros SSM de infraestructura"
+log_info "Paso 4/5: Eliminando parámetros SSM de infraestructura"
 SSM_BASE_PATH="/tvo/security-scan/prod/infra"
 NEXT_TOKEN=""
 DELETED_PARAMS=0
@@ -469,6 +469,52 @@ if [ "$DELETED_PARAMS" -gt 0 ]; then
 else
     log_info "No se encontraron parámetros SSM en '$SSM_BASE_PATH'"
 fi
+
+# ========================================
+# 5. Limpiar states residuales (S3 + DynamoDB locks)
+# ========================================
+log_info "Paso 5/5: Eliminando states residuales de S3 y locks de DynamoDB"
+
+STATE_BUCKETS=(
+    "tvo-installer-ecr-publisher-${AWS_REGION}-${AWS_ACCOUNT_ID}"
+    "tvo-agent-${AWS_REGION}-${AWS_ACCOUNT_ID}"
+)
+STATE_KEY="aws/ssm/upsert/terraform.tfstate"
+
+for bucket in "${STATE_BUCKETS[@]}"; do
+    log_info "Eliminando state: s3://${bucket}/${STATE_KEY}"
+    aws s3api delete-object \
+        --bucket "$bucket" \
+        --key "$STATE_KEY" \
+        --region "$AWS_REGION" > /dev/null 2>&1 || {
+        log_warning "No se pudo eliminar s3://${bucket}/${STATE_KEY} (puede no existir)"
+        ERRORS=$((ERRORS + 1))
+    }
+done
+
+LOCK_TABLE_1="tvo-agent-${AWS_REGION}-${AWS_ACCOUNT_ID}-tfstate-lock"
+LOCK_ID_1="tvo-agent-${AWS_REGION}-${AWS_ACCOUNT_ID}/aws/ssm/upsert/terraform.tfstate-md5"
+log_info "Eliminando lock en tabla '$LOCK_TABLE_1'"
+aws dynamodb delete-item \
+    --table-name "$LOCK_TABLE_1" \
+    --region "$AWS_REGION" \
+    --key "{\"LockID\":{\"S\":\"$LOCK_ID_1\"}}" > /dev/null 2>&1 || {
+    log_warning "No se pudo eliminar item '$LOCK_ID_1' en '$LOCK_TABLE_1' (puede no existir)"
+    ERRORS=$((ERRORS + 1))
+}
+
+LOCK_TABLE_2="tvo-installer-ecr-publisher-${AWS_REGION}-${AWS_ACCOUNT_ID}-tfstate-lock"
+LOCK_ID_2="tvo-installer-ecr-publisher-${AWS_REGION}-${AWS_ACCOUNT_ID}/aws/ssm/upsert/terraform.tfstate-md5"
+log_info "Eliminando lock en tabla '$LOCK_TABLE_2'"
+aws dynamodb delete-item \
+    --table-name "$LOCK_TABLE_2" \
+    --region "$AWS_REGION" \
+    --key "{\"LockID\":{\"S\":\"$LOCK_ID_2\"}}" > /dev/null 2>&1 || {
+    log_warning "No se pudo eliminar item '$LOCK_ID_2' en '$LOCK_TABLE_2' (puede no existir)"
+    ERRORS=$((ERRORS + 1))
+}
+
+echo ""
 
 # ========================================
 # Resumen final
