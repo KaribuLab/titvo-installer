@@ -41,7 +41,7 @@ func runTerragrunt(dir string, env map[string]string, action string) error {
 }
 
 func runBuild(sourceDir string, repeats int) error {
-	for i := 0; i < repeats; i++ {
+	for range repeats {
 		printInfo("Executing build with npm")
 		if err := executeWithOptionsFn("npm", &ExecuteOptions{WorkingDir: sourceDir}, "ci"); err != nil {
 			return fmt.Errorf("npm ci failed: %w", err)
@@ -210,23 +210,16 @@ func deployInfra(config DeployConfig) error {
 
 	scmSecretResults := []scmSecretResult{}
 
-	if config.BitbucketClientKey == "" || config.BitbucketClientSecret == "" {
+	if config.BitbucketAPIToken == "" {
 		printAskQuestion("Warning: Bitbucket credentials were not provided. Bitbucket integration deployment will be skipped.")
 	} else {
-		bitbucketCredentialsJSON, err := json.Marshal(map[string]string{
-			"key":    config.BitbucketClientKey,
-			"secret": config.BitbucketClientSecret,
-		})
+		encryptedBitbucketAPIToken, err := encrypt(config.BitbucketAPIToken, config.AESSecret)
 		if err != nil {
-			return fmt.Errorf("failed to serialize bitbucket credentials: %w", err)
-		}
-		encryptedBitbucketCredentials, err := encrypt(string(bitbucketCredentialsJSON), config.AESSecret)
-		if err != nil {
-			return fmt.Errorf("failed to encrypt bitbucket credentials: %w", err)
+			return fmt.Errorf("failed to encrypt bitbucket api token: %w", err)
 		}
 		scmSecretResults = append(scmSecretResults, scmSecretResult{
-			parameterID: "bitbucket_client_credentials",
-			value:       encryptedBitbucketCredentials,
+			parameterID: "bitbucket_api_token",
+			value:       encryptedBitbucketAPIToken,
 		})
 	}
 
@@ -261,9 +254,9 @@ func deployInfra(config DeployConfig) error {
 	}{
 		{repoDirName: "titvo-agent-aws", label: "agent aws", downloadFn: DownloadAgentAWSSource, buildRepeats: 0, needsSubmodule: false},
 		{repoDirName: "titvo-auth-setup-aws", label: "auth setup", downloadFn: DownloadAuthSetupSource, buildRepeats: 1, needsSubmodule: true},
-		{repoDirName: "titvo-task-cli-files-aws", label: "task cli files", downloadFn: DownloadTaskCliFilesSource, buildRepeats: 2, needsSubmodule: true},
-		{repoDirName: "titvo-task-trigger-aws", label: "task trigger", downloadFn: DownloadTaskTriggerSource, buildRepeats: 2, needsSubmodule: true},
-		{repoDirName: "titvo-task-status-aws", label: "task status", downloadFn: DownloadTaskStatusSource, buildRepeats: 2, needsSubmodule: true},
+		{repoDirName: "titvo-task-cli-files-aws", label: "task cli files", downloadFn: DownloadTaskCliFilesSource, buildRepeats: 1, needsSubmodule: true},
+		{repoDirName: "titvo-task-trigger-aws", label: "task trigger", downloadFn: DownloadTaskTriggerSource, buildRepeats: 1, needsSubmodule: true},
+		{repoDirName: "titvo-task-status-aws", label: "task status", downloadFn: DownloadTaskStatusSource, buildRepeats: 1, needsSubmodule: true},
 	}
 	for _, component := range firstStageComponents {
 		if err := deployNodeComponent(infraDir, component.repoDirName, component.label, component.downloadFn, env, component.buildRepeats, component.needsSubmodule); err != nil {
@@ -322,29 +315,35 @@ func deployInfra(config DeployConfig) error {
 	}
 
 	secondStageComponents := []struct {
-		repoDirName string
-		label       string
-		downloadFn  func(string) error
+		repoDirName    string
+		label          string
+		downloadFn     func(string) error
+		buildRepeat    int
+		needsSubmodule bool
 	}{
-		{repoDirName: "titvo-git-commit-files-aws", label: "git commit files aws", downloadFn: DownloadGitCommitFilesAWSSource},
-		{repoDirName: "titvo-issue-report-aws", label: "issue report aws", downloadFn: DownloadIssueReportAWSSource},
+		{repoDirName: "titvo-git-commit-files-aws", label: "git commit files aws", downloadFn: DownloadGitCommitFilesAWSSource, buildRepeat: 1, needsSubmodule: true},
+		{repoDirName: "titvo-issue-report-aws", label: "issue report aws", downloadFn: DownloadIssueReportAWSSource, buildRepeat: 1, needsSubmodule: true},
 	}
-	if config.BitbucketClientKey != "" && config.BitbucketClientSecret != "" {
+	if config.BitbucketAPIToken != "" {
 		secondStageComponents = append(secondStageComponents, struct {
-			repoDirName string
-			label       string
-			downloadFn  func(string) error
-		}{repoDirName: "titvo-bitbucket-code-insights-aws", label: "bitbucket code insights aws", downloadFn: DownloadBitbucketCodeInsightsAWSSource})
+			repoDirName    string
+			label          string
+			downloadFn     func(string) error
+			buildRepeat    int
+			needsSubmodule bool
+		}{repoDirName: "titvo-bitbucket-code-insights-aws", label: "bitbucket code insights aws", downloadFn: DownloadBitbucketCodeInsightsAWSSource, buildRepeat: 1, needsSubmodule: true})
 	}
 	if config.GithubAccessToken != "" {
 		secondStageComponents = append(secondStageComponents, struct {
-			repoDirName string
-			label       string
-			downloadFn  func(string) error
-		}{repoDirName: "titvo-github-issue-aws", label: "github issue aws", downloadFn: DownloadGithubIssueAWSSource})
+			repoDirName    string
+			label          string
+			downloadFn     func(string) error
+			buildRepeat    int
+			needsSubmodule bool
+		}{repoDirName: "titvo-github-issue-aws", label: "github issue aws", downloadFn: DownloadGithubIssueAWSSource, buildRepeat: 1, needsSubmodule: true})
 	}
 	for _, component := range secondStageComponents {
-		if err := deployNodeComponent(infraDir, component.repoDirName, component.label, component.downloadFn, env, 0, false); err != nil {
+		if err := deployNodeComponent(infraDir, component.repoDirName, component.label, component.downloadFn, env, component.buildRepeat, component.needsSubmodule); err != nil {
 			return err
 		}
 	}

@@ -16,7 +16,7 @@ import (
 )
 
 const promptFileUrl = "https://raw.githubusercontent.com/KaribuLab/titvo-installer/main/system_prompt.md"
-const reportTemplateFileUrl = "https://raw.githubusercontent.com/KaribuLab/titvo-installer/main/report_template.html"
+const contentTemplateFileUrl = "https://raw.githubusercontent.com/KaribuLab/titvo-installer/main/content_template.md"
 const apiKeyCharset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
 func downloadPromptFile(dir string) (string, error) {
@@ -28,13 +28,13 @@ func downloadPromptFile(dir string) (string, error) {
 	return path.Join(dir, "system_prompt.md"), nil
 }
 
-func downloadReportTemplateFile(dir string) (string, error) {
-	url := reportTemplateFileUrl
-	err := downloadFile(url, dir, "report_template.html")
+func downloadContentTemplateFile(dir string) (string, error) {
+	url := contentTemplateFileUrl
+	err := downloadFile(url, dir, "content_template.md")
 	if err != nil {
 		return "", err
 	}
-	return path.Join(dir, "report_template.html"), nil
+	return path.Join(dir, "content_template.md"), nil
 }
 
 // hashSha256 hashes data using SHA-256
@@ -119,8 +119,9 @@ func encrypt(text, key string) (string, error) {
 type StartConfig struct {
 	AWSCredentials *AWSCredentials
 	UserName       string
-	OpenAIModel    string
-	OpenAIApiKey   string
+	AIProvider     string
+	AIModel        string
+	AIApiKey       string
 	AESSecret      string
 	TitvoDir       string
 }
@@ -128,7 +129,7 @@ type StartConfig struct {
 // StartConfiguration starts the configuration
 func StartConfiguration(config *StartConfig) error {
 	printInfo("Starting configuration")
-	dynamoUserTableName, err := GetParameter(config.AWSCredentials, "/tvo/security-scan/prod/infra/dynamo-user-table-name")
+	dynamoUserTableName, err := GetParameter(config.AWSCredentials, "/tvo/security-scan/prod/infra/dynamo/user-table-name")
 	if err != nil {
 		return err
 	}
@@ -141,7 +142,7 @@ func StartConfiguration(config *StartConfig) error {
 	if err != nil {
 		return err
 	}
-	dynamoAPIKeyTableName, err := GetParameter(config.AWSCredentials, "/tvo/security-scan/prod/infra/dynamo-api-key-table-name")
+	dynamoAPIKeyTableName, err := GetParameter(config.AWSCredentials, "/tvo/security-scan/prod/infra/dynamo/apikey-table-name")
 	if err != nil {
 		return err
 	}
@@ -155,18 +156,25 @@ func StartConfiguration(config *StartConfig) error {
 	if err != nil {
 		return err
 	}
-	dynamoConfigurationTableName, err := GetParameter(config.AWSCredentials, "/tvo/security-scan/prod/infra/dynamo-configuration-table-name")
+	dynamoConfigurationTableName, err := GetParameter(config.AWSCredentials, "/tvo/security-scan/prod/infra/dynamo/parameter-table-name")
 	if err != nil {
 		return err
 	}
 	err = PutRecord(config.AWSCredentials, dynamoConfigurationTableName, map[string]interface{}{
-		"parameter_id": "open_ai_model",
-		"value":        config.OpenAIModel,
+		"parameter_id": "ai_provider",
+		"value":        config.AIProvider,
 	})
 	if err != nil {
 		return err
 	}
-	cliFilesBucketName, err := GetParameter(config.AWSCredentials, "/tvo/security-scan/prod/infra/cli-files-bucket-name")
+	err = PutRecord(config.AWSCredentials, dynamoConfigurationTableName, map[string]interface{}{
+		"parameter_id": "ai_model",
+		"value":        config.AIModel,
+	})
+	if err != nil {
+		return err
+	}
+	cliFilesBucketName, err := GetParameter(config.AWSCredentials, "/tvo/security-scan/prod/infra/dynamo/cli-files-table-name")
 	if err != nil {
 		return err
 	}
@@ -181,13 +189,13 @@ func StartConfiguration(config *StartConfig) error {
 	if len(config.AESSecret) != 32 {
 		return fmt.Errorf("AES_KEY must have 32 characters in length")
 	}
-	openAIApiKey, err := encrypt(config.OpenAIApiKey, config.AESSecret)
+	aiApiKey, err := encrypt(config.AIApiKey, config.AESSecret)
 	if err != nil {
 		return err
 	}
 	err = PutRecord(config.AWSCredentials, dynamoConfigurationTableName, map[string]interface{}{
-		"parameter_id": "open_ai_api_key",
-		"value":        openAIApiKey,
+		"parameter_id": "ai_api_key",
+		"value":        aiApiKey,
 	})
 	if err != nil {
 		return err
@@ -208,7 +216,7 @@ func StartConfiguration(config *StartConfig) error {
 	if err != nil {
 		return err
 	}
-	securityScanJobQueueName, err := GetParameter(config.AWSCredentials, "/tvo/security-scan/prod/infra/security-scan-job-queue-name")
+	securityScanJobQueueName, err := GetParameter(config.AWSCredentials, "/tvo/security-scan/prod/infra/batch/agent/job_queue_name")
 	if err != nil {
 		return err
 	}
@@ -219,23 +227,23 @@ func StartConfiguration(config *StartConfig) error {
 	if err != nil {
 		return err
 	}
-	// Read report template file
-	reportTemplateFilePath, err := downloadReportTemplateFile(config.TitvoDir)
+	// Read content template file
+	contentTemplateFilePath, err := downloadContentTemplateFile(config.TitvoDir)
 	if err != nil {
 		return err
 	}
-	reportTemplateFile, err := os.ReadFile(reportTemplateFilePath)
+	contentTemplateFile, err := os.ReadFile(contentTemplateFilePath)
 	if err != nil {
 		return err
 	}
 	err = PutRecord(config.AWSCredentials, dynamoConfigurationTableName, map[string]interface{}{
-		"parameter_id": "report_html_template",
-		"value":        string(reportTemplateFile),
+		"parameter_id": "content_template",
+		"value":        string(contentTemplateFile),
 	})
 	if err != nil {
 		return err
 	}
-	taskEndpoint, err := GetParameter(config.AWSCredentials, "/tvo/security-scan/prod/infra/api-gateway-task-api-full-endpoint")
+	taskEndpoint, err := GetParameter(config.AWSCredentials, "/tvo/security-scan/prod/infra/apigateway/task/api_gateway_api_full_endpoint")
 	if err != nil {
 		return err
 	}
@@ -246,29 +254,14 @@ func StartConfiguration(config *StartConfig) error {
 	if err != nil {
 		return err
 	}
-	reportBucketName, err := GetParameter(config.AWSCredentials, "/tvo/security-scan/prod/infra/report-bucket-name")
-	if err != nil {
-		return err
-	}
 	err = PutRecord(config.AWSCredentials, dynamoConfigurationTableName, map[string]interface{}{
-		"parameter_id": "report_bucket_name",
-		"value":        reportBucketName,
+		"parameter_id": "mcp_server_url",
+		"value":        "http://gateway.internal.titvo.com:3000/mcp",
 	})
 	if err != nil {
 		return err
 	}
-	reportBucketWebsiteDomain, err := GetParameter(config.AWSCredentials, "/tvo/security-scan/prod/infra/report-bucket-website-domain")
-	if err != nil {
-		return err
-	}
-	err = PutRecord(config.AWSCredentials, dynamoConfigurationTableName, map[string]interface{}{
-		"parameter_id": "report_bucket_domain",
-		"value":        reportBucketWebsiteDomain,
-	})
-	if err != nil {
-		return err
-	}
-	securityScanJobDefinitionName, err := GetParameter(config.AWSCredentials, "/tvo/security-scan/prod/infra/security-scan-batch-name")
+	securityScanJobDefinitionName, err := GetParameter(config.AWSCredentials, "/tvo/security-scan/prod/infra/batch/agent/job_definition_name")
 	if err != nil {
 		return err
 	}
@@ -279,7 +272,7 @@ func StartConfiguration(config *StartConfig) error {
 	if err != nil {
 		return err
 	}
-	setupEndpoint, err := GetParameter(config.AWSCredentials, "/tvo/security-scan/prod/infra/api-gateway-account-api-full-endpoint")
+	setupEndpoint, err := GetParameter(config.AWSCredentials, "/tvo/security-scan/prod/infra/apigateway/account/api_gateway_api_full_endpoint")
 	if err != nil {
 		return err
 	}

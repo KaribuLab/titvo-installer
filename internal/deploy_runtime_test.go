@@ -455,8 +455,7 @@ func TestDeployInfraGetParameterError(t *testing.T) {
 func TestDeployInfraOptionalSCMIntegrations(t *testing.T) {
 	tests := []struct {
 		name                       string
-		bitbucketClientKey         string
-		bitbucketClientSecret      string
+		bitbucketAPIToken          string
 		githubAccessToken          string
 		expectBitbucketApply       bool
 		expectGithubApply          bool
@@ -464,8 +463,7 @@ func TestDeployInfraOptionalSCMIntegrations(t *testing.T) {
 	}{
 		{
 			name:                       "none provided",
-			bitbucketClientKey:         "",
-			bitbucketClientSecret:      "",
+			bitbucketAPIToken:          "",
 			githubAccessToken:          "",
 			expectBitbucketApply:       false,
 			expectGithubApply:          false,
@@ -473,17 +471,15 @@ func TestDeployInfraOptionalSCMIntegrations(t *testing.T) {
 		},
 		{
 			name:                       "only bitbucket provided",
-			bitbucketClientKey:         "bb-key",
-			bitbucketClientSecret:      "bb-secret",
+			bitbucketAPIToken:          "bb-token",
 			githubAccessToken:          "",
 			expectBitbucketApply:       true,
 			expectGithubApply:          false,
-			expectedDynamoParameterIDs: []string{"bitbucket_client_credentials"},
+			expectedDynamoParameterIDs: []string{"bitbucket_api_token"},
 		},
 		{
 			name:                       "only github provided",
-			bitbucketClientKey:         "",
-			bitbucketClientSecret:      "",
+			bitbucketAPIToken:          "",
 			githubAccessToken:          "gh-token",
 			expectBitbucketApply:       false,
 			expectGithubApply:          true,
@@ -491,12 +487,11 @@ func TestDeployInfraOptionalSCMIntegrations(t *testing.T) {
 		},
 		{
 			name:                       "both provided",
-			bitbucketClientKey:         "bb-key",
-			bitbucketClientSecret:      "bb-secret",
+			bitbucketAPIToken:          "bb-token",
 			githubAccessToken:          "gh-token",
 			expectBitbucketApply:       true,
 			expectGithubApply:          true,
-			expectedDynamoParameterIDs: []string{"bitbucket_client_credentials", "github_access_token"},
+			expectedDynamoParameterIDs: []string{"bitbucket_api_token", "github_access_token"},
 		},
 	}
 
@@ -547,8 +542,7 @@ func TestDeployInfraOptionalSCMIntegrations(t *testing.T) {
 			}
 
 			config := validDeployConfig(titvoDir)
-			config.BitbucketClientKey = tc.bitbucketClientKey
-			config.BitbucketClientSecret = tc.bitbucketClientSecret
+			config.BitbucketAPIToken = tc.bitbucketAPIToken
 			config.GithubAccessToken = tc.githubAccessToken
 			if err := deployInfra(config); err != nil {
 				t.Fatalf("expected no error, got %v", err)
@@ -592,18 +586,14 @@ func TestDeployInfraOptionalSCMIntegrations(t *testing.T) {
 				}
 			}
 
-			if tc.bitbucketClientKey != "" && tc.bitbucketClientSecret != "" {
-				expectedBitbucketJSON, err := json.Marshal(map[string]string{"key": tc.bitbucketClientKey, "secret": tc.bitbucketClientSecret})
+			if tc.bitbucketAPIToken != "" {
+				expectedEncrypted, err := encrypt(tc.bitbucketAPIToken, config.AESSecret)
 				if err != nil {
-					t.Fatalf("failed to marshal expected bitbucket json: %v", err)
+					t.Fatalf("failed to encrypt expected bitbucket token: %v", err)
 				}
-				expectedEncrypted, err := encrypt(string(expectedBitbucketJSON), config.AESSecret)
-				if err != nil {
-					t.Fatalf("failed to encrypt expected bitbucket json: %v", err)
-				}
-				actualEncrypted := dynamoValues["bitbucket_client_credentials"]
+				actualEncrypted := dynamoValues["bitbucket_api_token"]
 				if actualEncrypted != expectedEncrypted {
-					t.Fatalf("unexpected encrypted bitbucket credentials")
+					t.Fatalf("unexpected encrypted bitbucket api token")
 				}
 			}
 
@@ -721,17 +711,16 @@ func TestDeployInfraAdditionalErrorPaths(t *testing.T) {
 			prepare: func(t *testing.T, titvoDir string) { createRequiredInfraDirs(t, titvoDir) },
 			mutate: func() {
 				putRecordFn = func(creds *AWSCredentials, tableName string, item map[string]interface{}) error {
-					if item["parameter_id"] == "bitbucket_client_credentials" {
+					if item["parameter_id"] == "bitbucket_api_token" {
 						return errors.New("bitbucket dynamo put fail")
 					}
 					return nil
 				}
 			},
 			mutateConfig: func(config *DeployConfig) {
-				config.BitbucketClientKey = "bb-key"
-				config.BitbucketClientSecret = "bb-secret"
+				config.BitbucketAPIToken = "bb-token"
 			},
-			expected: "failed to put scm parameter bitbucket_client_credentials in dynamodb: bitbucket dynamo put fail",
+			expected: "failed to put scm parameter bitbucket_api_token in dynamodb: bitbucket dynamo put fail",
 		},
 		{
 			name:    "put github dynamo parameter fails",
@@ -831,8 +820,7 @@ func TestDeployInfraAdditionalErrorPaths(t *testing.T) {
 				}
 			},
 			mutateConfig: func(config *DeployConfig) {
-				config.BitbucketClientKey = "bb-key"
-				config.BitbucketClientSecret = "bb-secret"
+				config.BitbucketAPIToken = "bb-token"
 			},
 			expected: "failed to download bitbucket code insights aws: bitbucket download fail",
 		},

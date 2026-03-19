@@ -65,28 +65,21 @@ func (c *AWSFileCredentials) GetCredentials() (*AWSCredentials, error) {
 }
 
 type SetupConfigFile struct {
-	AWSAccessKeyID             string `json:"aws_access_key_id"`
-	AWSSecretAccessKey         string `json:"aws_secret_access_key"`
-	AWSSessionToken            string `json:"aws_session_token"`
-	AWSRegion                  string `json:"aws_region"`
-	VPCID                      string `json:"vpc_id"`
-	PrivateSubnetCIDR          string `json:"private_subnet_cidr"`
-	AvailabilityZone           string `json:"availability_zone"`
-	NatGatewayID               string `json:"nat_gateway_id"`
-	AesSecret                  string `json:"aes_secret"`
-	UserName                   string `json:"user_name"`
-	OpenAIModel                string `json:"open_ai_model"`
-	OpenAIApiKey               string `json:"open_ai_api_key"`
-	BitbucketClientKey         string `json:"bitbucket_client_key"`
-	BitbucketClientSecret      string `json:"bitbucket_client_secret"`
-	GithubAccessToken          string `json:"github_access_token"`
-	BitbucketClientKeyCamel    string `json:"bitbucketClientKey"`
-	BitbucketClientSecretCamel string `json:"bitbucketClientSecret"`
-	GithubAccessTokenCamel     string `json:"githubAccessToken"`
-	BitbucketAccessKey         string `json:"bitbucket_access_key"`
-	GithubApiKey               string `json:"github_api_key"`
-	BitbucketAccessKeyCamel    string `json:"bitbucketAccessKey"`
-	GithubApiKeyCamel          string `json:"githubApiKey"`
+	AWSAccessKeyID     string `json:"aws_access_key_id"`
+	AWSSecretAccessKey string `json:"aws_secret_access_key"`
+	AWSSessionToken    string `json:"aws_session_token"`
+	AWSRegion          string `json:"aws_region"`
+	VPCID              string `json:"vpc_id"`
+	PrivateSubnetCIDR  string `json:"private_subnet_cidr"`
+	AvailabilityZone   string `json:"availability_zone"`
+	NatGatewayID       string `json:"nat_gateway_id"`
+	AesSecret          string `json:"aes_secret"`
+	UserName           string `json:"user_name"`
+	AIProvider         string `json:"ai_provider"`
+	AIModel            string `json:"ai_model"`
+	AIApiKey           string `json:"ai_api_key"`
+	BitbucketAPIToken  string `json:"bitbucket_api_token"`
+	GithubAccessToken  string `json:"github_access_token"`
 }
 
 type SetupConfigFileLookup struct {
@@ -103,28 +96,18 @@ func (c *SetupConfigFileLookup) GetCredentials() (*AWSCredentials, error) {
 }
 
 type SetupConfig struct {
-	AWSCredentialsLookup  AWSCredentialsLookup
-	VPCID                 string
-	PrivateSubnetCIDR     string
-	AvailabilityZone      string
-	NatGatewayID          string
-	AesSecret             string
-	UserName              string
-	OpenAIModel           string
-	OpenAIApiKey          string
-	BitbucketClientKey    string
-	BitbucketClientSecret string
-	GithubAccessToken     string
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		trimmed := strings.TrimSpace(value)
-		if trimmed != "" {
-			return trimmed
-		}
-	}
-	return ""
+	AWSCredentialsLookup AWSCredentialsLookup
+	VPCID                string
+	PrivateSubnetCIDR    string
+	AvailabilityZone     string
+	NatGatewayID         string
+	AesSecret            string
+	UserName             string
+	AIProvider           string
+	AIModel              string
+	AIApiKey             string
+	BitbucketAPIToken    string
+	GithubAccessToken    string
 }
 
 func askForPromptInput(awsRegion string) (*SetupConfig, error) {
@@ -137,10 +120,10 @@ func askForPromptInput(awsRegion string) (*SetupConfig, error) {
 	var natGatewayID string
 	var aesSecret string
 	var userName string
-	var openAIModel string
-	var openAIApiKey string
-	var bitbucketClientKey string
-	var bitbucketClientSecret string
+	var aiProvider string
+	var aiModel string
+	var aiApiKey string
+	var bitbucketAPIToken string
 	var githubAccessToken string
 	var err error
 	awsAccessKeyID, err = askForPassword("Enter your AWS Access Key ID", "AWS Access Key ID")
@@ -183,11 +166,15 @@ func askForPromptInput(awsRegion string) (*SetupConfig, error) {
 	if err != nil {
 		printErrorAndExit(err)
 	}
-	openAIModel, err = askForInput("Enter your OpenAI Model", "OpenAI Model")
+	aiProvider, err = askForAIProvider()
 	if err != nil {
 		printErrorAndExit(err)
 	}
-	openAIApiKey, err = askForPassword("Enter your OpenAI API Key", "OpenAI API Key")
+	aiModel, err = askForInput("Enter your AI Model", "AI Model")
+	if err != nil {
+		printErrorAndExit(err)
+	}
+	aiApiKey, err = askForPassword("Enter your AI API Key", "AI API Key")
 	if err != nil {
 		printErrorAndExit(err)
 	}
@@ -196,11 +183,7 @@ func askForPromptInput(awsRegion string) (*SetupConfig, error) {
 		printErrorAndExit(err)
 	}
 	if configureBitbucket {
-		bitbucketClientKey, err = askForPassword("Enter Bitbucket Client Key", "Bitbucket Client Key")
-		if err != nil {
-			printErrorAndExit(err)
-		}
-		bitbucketClientSecret, err = askForPassword("Enter Bitbucket Client Secret", "Bitbucket Client Secret")
+		bitbucketAPIToken, err = askForPassword("Enter Bitbucket API Token", "Bitbucket API Token")
 		if err != nil {
 			printErrorAndExit(err)
 		}
@@ -230,18 +213,35 @@ func askForPromptInput(awsRegion string) (*SetupConfig, error) {
 				AWSRegion:          strings.TrimSpace(awsRegion),
 			},
 		},
-		VPCID:                 vpcID,
-		PrivateSubnetCIDR:     privateSubnetCIDR,
-		AvailabilityZone:      availabilityZone,
-		NatGatewayID:          natGatewayID,
-		AesSecret:             string(aesSecret),
-		UserName:              userName,
-		OpenAIModel:           openAIModel,
-		OpenAIApiKey:          string(openAIApiKey),
-		BitbucketClientKey:    string(bitbucketClientKey),
-		BitbucketClientSecret: string(bitbucketClientSecret),
-		GithubAccessToken:     string(githubAccessToken),
+		VPCID:             vpcID,
+		PrivateSubnetCIDR: privateSubnetCIDR,
+		AvailabilityZone:  availabilityZone,
+		NatGatewayID:      natGatewayID,
+		AesSecret:         string(aesSecret),
+		UserName:          userName,
+		AIProvider:        aiProvider,
+		AIModel:           aiModel,
+		AIApiKey:          string(aiApiKey),
+		BitbucketAPIToken: string(bitbucketAPIToken),
+		GithubAccessToken: string(githubAccessToken),
 	}, nil
+}
+
+func askForAIProvider() (string, error) {
+	choices := []choice{
+		{Label: "Anthropic", Value: "anthropic", Callback: func() (any, error) { return "anthropic", nil }},
+		{Label: "OpenAI", Value: "openai", Callback: func() (any, error) { return "openai", nil }},
+		{Label: "Google", Value: "google", Callback: func() (any, error) { return "google", nil }},
+	}
+	result, err := askForChoices("Select AI Provider", choices)
+	if err != nil {
+		return "", err
+	}
+	provider, ok := result.(string)
+	if !ok {
+		return "", fmt.Errorf("unexpected type returned from askForChoices")
+	}
+	return provider, nil
 }
 
 func SetupInstallation() (config *SetupConfig, err error) {

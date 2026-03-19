@@ -57,27 +57,26 @@ func askForCredentialsFile(awsRegion string) (*SetupConfig, error) {
 	if err != nil {
 		printErrorAndExit(err)
 	}
-	openAIModel, err := askForInput("Enter your OpenAI Model", "OpenAI Model")
+	aiProvider, err := askForAIProvider()
 	if err != nil {
 		printErrorAndExit(err)
 	}
-	openAIApiKey, err := askForPassword("Enter your OpenAI API Key", "OpenAI API Key")
+	aiModel, err := askForInput("Enter your AI Model", "AI Model")
+	if err != nil {
+		printErrorAndExit(err)
+	}
+	aiApiKey, err := askForPassword("Enter your AI API Key", "AI API Key")
 	if err != nil {
 		printErrorAndExit(err)
 	}
 
-	bitbucketClientKey := ""
-	bitbucketClientSecret := ""
+	bitbucketAPIToken := ""
 	configureBitbucket, err := askForYesNo("Do you want to configure Bitbucket credentials? (y/N)")
 	if err != nil {
 		printErrorAndExit(err)
 	}
 	if configureBitbucket {
-		bitbucketClientKey, err = askForPassword("Enter Bitbucket Client Key", "Bitbucket Client Key")
-		if err != nil {
-			printErrorAndExit(err)
-		}
-		bitbucketClientSecret, err = askForPassword("Enter Bitbucket Client Secret", "Bitbucket Client Secret")
+		bitbucketAPIToken, err = askForPassword("Enter Bitbucket API Token", "Bitbucket API Token")
 		if err != nil {
 			printErrorAndExit(err)
 		}
@@ -104,17 +103,17 @@ func askForCredentialsFile(awsRegion string) (*SetupConfig, error) {
 			Profile: profile,
 			Region:  strings.TrimSpace(awsRegion),
 		},
-		VPCID:                 vpcID,
-		PrivateSubnetCIDR:     privateSubnetCIDR,
-		AvailabilityZone:      availabilityZone,
-		NatGatewayID:          natGatewayID,
-		AesSecret:             string(aesSecret),
-		UserName:              userName,
-		OpenAIModel:           openAIModel,
-		OpenAIApiKey:          string(openAIApiKey),
-		BitbucketClientKey:    string(bitbucketClientKey),
-		BitbucketClientSecret: string(bitbucketClientSecret),
-		GithubAccessToken:     string(githubAccessToken),
+		VPCID:             vpcID,
+		PrivateSubnetCIDR: privateSubnetCIDR,
+		AvailabilityZone:  availabilityZone,
+		NatGatewayID:      natGatewayID,
+		AesSecret:         string(aesSecret),
+		UserName:          userName,
+		AIProvider:        aiProvider,
+		AIModel:           aiModel,
+		AIApiKey:          string(aiApiKey),
+		BitbucketAPIToken: string(bitbucketAPIToken),
+		GithubAccessToken: string(githubAccessToken),
 	}, nil
 }
 

@@ -40,17 +40,17 @@ func RunInstaller(cmd *cobra.Command, args []string) {
 			AWSCredentialsLookup: &SetupConfigFileLookup{
 				SetupConfigFile: setupConfigFile,
 			},
-			VPCID:                 setupConfigFile.VPCID,
-			PrivateSubnetCIDR:     setupConfigFile.PrivateSubnetCIDR,
-			AvailabilityZone:      setupConfigFile.AvailabilityZone,
-			NatGatewayID:          setupConfigFile.NatGatewayID,
-			AesSecret:             setupConfigFile.AesSecret,
-			UserName:              setupConfigFile.UserName,
-			OpenAIModel:           setupConfigFile.OpenAIModel,
-			OpenAIApiKey:          setupConfigFile.OpenAIApiKey,
-			BitbucketClientKey:    firstNonEmpty(setupConfigFile.BitbucketClientKey, setupConfigFile.BitbucketClientKeyCamel, setupConfigFile.BitbucketAccessKey, setupConfigFile.BitbucketAccessKeyCamel),
-			BitbucketClientSecret: firstNonEmpty(setupConfigFile.BitbucketClientSecret, setupConfigFile.BitbucketClientSecretCamel),
-			GithubAccessToken:     firstNonEmpty(setupConfigFile.GithubAccessToken, setupConfigFile.GithubAccessTokenCamel, setupConfigFile.GithubApiKey, setupConfigFile.GithubApiKeyCamel),
+			VPCID:             setupConfigFile.VPCID,
+			PrivateSubnetCIDR: setupConfigFile.PrivateSubnetCIDR,
+			AvailabilityZone:  setupConfigFile.AvailabilityZone,
+			NatGatewayID:      setupConfigFile.NatGatewayID,
+			AesSecret:         setupConfigFile.AesSecret,
+			UserName:          setupConfigFile.UserName,
+			AIProvider:        setupConfigFile.AIProvider,
+			AIModel:           setupConfigFile.AIModel,
+			AIApiKey:          setupConfigFile.AIApiKey,
+			BitbucketAPIToken: setupConfigFile.BitbucketAPIToken,
+			GithubAccessToken: setupConfigFile.GithubAccessToken,
 		}
 	} else {
 		setup, err = SetupInstallation()
@@ -69,17 +69,16 @@ func RunInstaller(cmd *cobra.Command, args []string) {
 		printErrorAndExit(err)
 	}
 	err = DeployInfra(DeployConfig{
-		AWSCredentials:        *awsCredentials,
-		InstallToolConfig:     *tool,
-		VPCID:                 setup.VPCID,
-		PrivateSubnetCIDR:     setup.PrivateSubnetCIDR,
-		AvailabilityZone:      setup.AvailabilityZone,
-		NatGatewayID:          setup.NatGatewayID,
-		AESSecret:             setup.AesSecret,
-		BitbucketClientKey:    setup.BitbucketClientKey,
-		BitbucketClientSecret: setup.BitbucketClientSecret,
-		GithubAccessToken:     setup.GithubAccessToken,
-		Debug:                 debug,
+		AWSCredentials:    *awsCredentials,
+		InstallToolConfig: *tool,
+		VPCID:             setup.VPCID,
+		PrivateSubnetCIDR: setup.PrivateSubnetCIDR,
+		AvailabilityZone:  setup.AvailabilityZone,
+		NatGatewayID:      setup.NatGatewayID,
+		AESSecret:         setup.AesSecret,
+		BitbucketAPIToken: setup.BitbucketAPIToken,
+		GithubAccessToken: setup.GithubAccessToken,
+		Debug:             debug,
 	})
 	if err != nil {
 		printErrorAndExit(err)
@@ -88,8 +87,9 @@ func RunInstaller(cmd *cobra.Command, args []string) {
 	startConfig := StartConfig{
 		AWSCredentials: awsCredentials,
 		UserName:       setup.UserName,
-		OpenAIModel:    setup.OpenAIModel,
-		OpenAIApiKey:   setup.OpenAIApiKey,
+		AIProvider:     setup.AIProvider,
+		AIModel:        setup.AIModel,
+		AIApiKey:       setup.AIApiKey,
 		AESSecret:      setup.AesSecret,
 		TitvoDir:       tool.TitvoDir,
 	}
