@@ -174,7 +174,7 @@ func StartConfiguration(config *StartConfig) error {
 	if err != nil {
 		return err
 	}
-	cliFilesBucketName, err := GetParameter(config.AWSCredentials, "/tvo/security-scan/prod/infra/dynamo/cli-files-table-name")
+	cliFilesBucketName, err := GetParameter(config.AWSCredentials, "/tvo/security-scan/prod/infra/s3/cli-files/bucket_name")
 	if err != nil {
 		return err
 	}
@@ -272,7 +272,7 @@ func StartConfiguration(config *StartConfig) error {
 	if err != nil {
 		return err
 	}
-	setupEndpoint, err := GetParameter(config.AWSCredentials, "/tvo/security-scan/prod/infra/apigateway/account/api_gateway_api_full_endpoint")
+	setupEndpoint, err := GetParameter(config.AWSCredentials, "/tvo/security-scan/prod/infra/apigateway/task/api_gateway_api_full_endpoint")
 	if err != nil {
 		return err
 	}
