@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Evita que AWS CLI abra un pager interactivo durante la limpieza.
+export AWS_PAGER=""
+
 PREFIX="${PREFIX:-tvo}"
 REGION="${AWS_REGION:-us-east-2}"
 APPLY=0
