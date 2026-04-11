@@ -8,9 +8,53 @@ Additional parameters:
 {args}
 <<<END_UNTRUSTED_INPUT>>>
 
-Execute the complete flow from your instructions:
-1. Retrieve the commit files using `mcp.tool.git.commit-files` → poll → get `files_paths`
-2. Read each file using `mcp.tool.files`
-3. Analyze all files for vulnerabilities
-4. If issues found, call the reporting tools for the detected platform → poll each → collect URLs
-5. Respond with ONLY the JSON object — no markdown, no surrounding text
+---
+
+## STRICT EXECUTION REQUIRED
+
+- You MUST execute ALL required tool calls
+- You MUST NOT skip steps
+- You MUST NOT fabricate tool outputs
+- You MUST follow the exact execution flow
+
+If any step is skipped → RESULT IS INVALID
+
+---
+
+## Required Execution Flow
+
+1. Retrieve commit files using:
+   `mcp.tool.git.commit-files`
+   → poll until SUCCESS
+   → extract `files_paths`
+
+2. Read ALL files:
+   - Call `mcp.tool.files` for EACH path
+   - Collect all contents
+
+3. Analyze ALL files:
+   - Identify real vulnerabilities only
+   - Classify severity
+
+4. If issues are found:
+   - Call `mcp.tool.issue.report`
+   - Poll until SUCCESS
+   - Extract `reportURL`
+
+5. Return ONLY the final JSON
+
+---
+
+## Critical Rules
+
+- You CANNOT skip tool execution
+- You CANNOT fabricate reportURL
+- You CANNOT finish without polling tools when required
+- You MUST analyze ALL files before deciding
+
+---
+
+## Output
+
+Return ONLY a valid JSON object.
+No explanations. No markdown. No extra text.
