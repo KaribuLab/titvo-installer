@@ -16,7 +16,23 @@ func NewRootCommand() *cobra.Command {
 	}
 	rootCmd.Flags().BoolP("debug", "d", false, "Enable debug mode")
 	rootCmd.Flags().StringP("config", "c", "", "Configuration file")
+
+	// Agregar subcomando add-secret
+	rootCmd.AddCommand(NewAddSecretCommand())
+
 	return rootCmd
+}
+
+func NewAddSecretCommand() *cobra.Command {
+	addSecretCmd := &cobra.Command{
+		Use:   "add-secret",
+		Short: "Add a secret to the Titvo configuration table",
+		Long:  "Add a secret to the Titvo configuration table in DynamoDB. The secret value will be encrypted using AES.",
+		Run:   internal.RunSecretLoader,
+	}
+	addSecretCmd.Flags().BoolP("debug", "d", false, "Enable debug mode")
+	addSecretCmd.Flags().StringP("config", "c", "", "Configuration file with AWS credentials")
+	return addSecretCmd
 }
 
 func main() {

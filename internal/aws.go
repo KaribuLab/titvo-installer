@@ -263,3 +263,28 @@ func PutRecord(creds *AWSCredentials, tableName string, item map[string]interfac
 
 	return nil
 }
+
+// GetSecret obtiene el valor de un secreto desde AWS Secrets Manager
+func GetSecret(creds *AWSCredentials, secretName string) (string, error) {
+	cfg, err := creds.getAWSConfig(context.TODO())
+	if err != nil {
+		return "", fmt.Errorf("error al cargar configuración de AWS: %w", err)
+	}
+
+	client := secretsmanager.NewFromConfig(cfg)
+
+	input := &secretsmanager.GetSecretValueInput{
+		SecretId: aws.String(secretName),
+	}
+
+	result, err := client.GetSecretValue(context.TODO(), input)
+	if err != nil {
+		return "", fmt.Errorf("error al obtener secreto '%s': %w", secretName, err)
+	}
+
+	if result.SecretString == nil {
+		return "", fmt.Errorf("secreto '%s' no tiene valor string", secretName)
+	}
+
+	return *result.SecretString, nil
+}

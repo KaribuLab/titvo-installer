@@ -1,12 +1,9 @@
 package internal
 
 import (
-	"crypto/aes"
 	"crypto/rand"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -76,44 +73,6 @@ func generateAPIKey() string {
 	}
 
 	return prefix + suffix.String()
-}
-
-// encrypt encrypts a text using AES in ECB mode
-func encrypt(text, key string) (string, error) {
-	if len(key) != 32 {
-		return "", errors.New("AES_KEY must have 32 characters length")
-	}
-
-	// Create the AES cipher
-	block, err := aes.NewCipher([]byte(key))
-	if err != nil {
-		return "", err
-	}
-
-	// Convert text to bytes
-	plaintext := []byte(text)
-
-	// Apply padding PKCS7 to make it a multiple of the block size
-	blockSize := block.BlockSize()
-	padding := blockSize - len(plaintext)%blockSize
-	// PKCS7 padding: if text is already multiple of block size, add a full block of padding
-	if padding == 0 {
-		padding = blockSize
-	}
-	padtext := make([]byte, len(plaintext)+padding)
-	copy(padtext, plaintext)
-	for i := len(plaintext); i < len(padtext); i++ {
-		padtext[i] = byte(padding)
-	}
-
-	// Encrypt using ECB (block by block) using the AES cipher
-	encrypted := make([]byte, len(padtext))
-	for i := 0; i < len(padtext); i += blockSize {
-		block.Encrypt(encrypted[i:i+blockSize], padtext[i:i+blockSize])
-	}
-
-	// Return in base64 format
-	return base64.StdEncoding.EncodeToString(encrypted), nil
 }
 
 type StartConfig struct {
