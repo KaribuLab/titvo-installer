@@ -17,22 +17,35 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.Flags().BoolP("debug", "d", false, "Enable debug mode")
 	rootCmd.Flags().StringP("config", "c", "", "Configuration file")
 
-	// Agregar subcomando add-secret
-	rootCmd.AddCommand(NewAddSecretCommand())
+	// Agregar subcomandos secret y parameter
+	rootCmd.AddCommand(NewSecretCommand())
+	rootCmd.AddCommand(NewParameterCommand())
 
 	return rootCmd
 }
 
-func NewAddSecretCommand() *cobra.Command {
-	addSecretCmd := &cobra.Command{
-		Use:   "add-secret",
-		Short: "Add a secret to the Titvo configuration table",
-		Long:  "Add a secret to the Titvo configuration table in DynamoDB. The secret value will be encrypted using AES.",
+func NewSecretCommand() *cobra.Command {
+	secretCmd := &cobra.Command{
+		Use:   "secret",
+		Short: "Agrega un secreto encriptado a la tabla de configuración",
+		Long:  "Agrega un secreto a la tabla de configuración de Titvo en DynamoDB. El valor del secreto será encriptado usando AES.",
 		Run:   internal.RunSecretLoader,
 	}
-	addSecretCmd.Flags().BoolP("debug", "d", false, "Enable debug mode")
-	addSecretCmd.Flags().StringP("config", "c", "", "Configuration file with AWS credentials")
-	return addSecretCmd
+	secretCmd.Flags().BoolP("debug", "d", false, "Enable debug mode")
+	secretCmd.Flags().StringP("config", "c", "", "Archivo de configuración con credenciales de AWS")
+	return secretCmd
+}
+
+func NewParameterCommand() *cobra.Command {
+	paramCmd := &cobra.Command{
+		Use:   "parameter",
+		Short: "Agrega un parámetro (sin encriptar) a la tabla de configuración",
+		Long:  "Agrega un parámetro a la tabla de configuración de Titvo en DynamoDB. El valor se almacena en texto plano.",
+		Run:   internal.RunParameterLoader,
+	}
+	paramCmd.Flags().BoolP("debug", "d", false, "Enable debug mode")
+	paramCmd.Flags().StringP("config", "c", "", "Archivo de configuración con credenciales de AWS")
+	return paramCmd
 }
 
 func main() {

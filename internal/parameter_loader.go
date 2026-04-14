@@ -23,8 +23,9 @@ type SecretLoaderConfig struct {
 	AWSCredentials AWSCredentials
 }
 
-// RunSecretLoader ejecuta el flujo para cargar un secreto en la tabla de configuración
-func RunSecretLoader(cmd *cobra.Command, args []string) {
+// prepareCredentials carga las credenciales AWS y verifica que Titvo esté instalado
+// Esta función es compartida entre RunSecretLoader y RunParameterLoader
+func prepareCredentials(cmd *cobra.Command) *AWSCredentials {
 	debug, err := cmd.Flags().GetBool("debug")
 	if err != nil {
 		printErrorAndExit(err)
@@ -38,7 +39,6 @@ func RunSecretLoader(cmd *cobra.Command, args []string) {
 		printErrorAndExit(err)
 	}
 
-	printInfo("Iniciando cargador de secretos")
 	printInfo("Este comando requiere que Titvo esté instalado. Verificando...")
 
 	var awsCredentials *AWSCredentials
@@ -63,6 +63,15 @@ func RunSecretLoader(cmd *cobra.Command, args []string) {
 	}
 
 	printInfo("Titvo está instalado. Continuando...")
+
+	return awsCredentials
+}
+
+// RunSecretLoader ejecuta el flujo para cargar secretos encriptados en la tabla de configuración
+func RunSecretLoader(cmd *cobra.Command, args []string) {
+	printInfo("Iniciando cargador de secretos")
+
+	awsCredentials := prepareCredentials(cmd)
 
 	// Obtener la clave AES desde Secret Manager (una sola vez para todos los secretos)
 	printInfo("Obteniendo clave de encriptación desde Secret Manager...")
@@ -123,6 +132,50 @@ func RunSecretLoader(cmd *cobra.Command, args []string) {
 		}
 		if !addAnother {
 			printInfo("Saliendo del cargador de secretos.")
+			break
+		}
+	}
+}
+
+// RunParameterLoader ejecuta el flujo para cargar parámetros (sin encriptar) en la tabla de configuración
+func RunParameterLoader(cmd *cobra.Command, args []string) {
+	printInfo("Iniciando cargador de parámetros")
+
+	awsCredentials := prepareCredentials(cmd)
+
+	// Loop para permitir agregar múltiples parámetros
+	for {
+		// Pedir nombre del parámetro
+		paramName, err := askForInput("Ingresa el nombre del parámetro (parameter_id)", "Nombre del parámetro")
+		if err != nil {
+			printErrorAndExit(err)
+		}
+
+		// Pedir valor del parámetro (texto visible, no oculto)
+		paramValue, err := askForInput("Ingresa el valor del parámetro", "Valor del parámetro")
+		if err != nil {
+			printErrorAndExit(err)
+		}
+
+		// Insertar en DynamoDB
+		printInfo("Insertando parámetro en la tabla de configuración...")
+		err = PutRecord(awsCredentials, "tvo-security-scan-parameter-prod", map[string]interface{}{
+			"parameter_id": paramName,
+			"value":        paramValue,
+		})
+		if err != nil {
+			printErrorAndExit(fmt.Errorf("error al insertar parámetro en DynamoDB: %w", err))
+		}
+
+		printInfo(fmt.Sprintf("Parámetro '%s' guardado exitosamente en la tabla de configuración", paramName))
+
+		// Preguntar si desea agregar otro parámetro
+		addAnother, err := askForYesNo("¿Deseas agregar otro parámetro? (s/N)")
+		if err != nil {
+			printErrorAndExit(err)
+		}
+		if !addAnother {
+			printInfo("Saliendo del cargador de parámetros.")
 			break
 		}
 	}
