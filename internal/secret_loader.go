@@ -64,19 +64,7 @@ func RunSecretLoader(cmd *cobra.Command, args []string) {
 
 	printInfo("Titvo está instalado. Continuando...")
 
-	// Pedir nombre del secreto
-	secretName, err := askForInput("Ingresa el nombre del secreto (parameter_id)", "Nombre del secreto")
-	if err != nil {
-		printErrorAndExit(err)
-	}
-
-	// Pedir valor del secreto (input oculto)
-	secretValue, err := askForPassword("Ingresa el valor del secreto", "Valor del secreto")
-	if err != nil {
-		printErrorAndExit(err)
-	}
-
-	// Obtener la clave AES desde Secret Manager
+	// Obtener la clave AES desde Secret Manager (una sola vez para todos los secretos)
 	printInfo("Obteniendo clave de encriptación desde Secret Manager...")
 	aesSecretEncoded, err := GetSecret(awsCredentials, "/tvo/security-scan/prod/aes_secret")
 	if err != nil {
@@ -95,24 +83,49 @@ func RunSecretLoader(cmd *cobra.Command, args []string) {
 		printErrorAndExit(fmt.Errorf("la clave AES debe tener 32 caracteres"))
 	}
 
-	// Encriptar el valor
-	printInfo("Encriptando valor del secreto...")
-	encryptedValue, err := encrypt(secretValue, aesSecret)
-	if err != nil {
-		printErrorAndExit(fmt.Errorf("error al encriptar el valor: %w", err))
-	}
+	// Loop para permitir agregar múltiples secretos
+	for {
+		// Pedir nombre del secreto
+		secretName, err := askForInput("Ingresa el nombre del secreto (parameter_id)", "Nombre del secreto")
+		if err != nil {
+			printErrorAndExit(err)
+		}
 
-	// Insertar en DynamoDB
-	printInfo("Insertando secreto en la tabla de configuración...")
-	err = PutRecord(awsCredentials, "tvo-security-scan-parameter-prod", map[string]interface{}{
-		"parameter_id": secretName,
-		"value":        encryptedValue,
-	})
-	if err != nil {
-		printErrorAndExit(fmt.Errorf("error al insertar secreto en DynamoDB: %w", err))
-	}
+		// Pedir valor del secreto (input oculto)
+		secretValue, err := askForPassword("Ingresa el valor del secreto", "Valor del secreto")
+		if err != nil {
+			printErrorAndExit(err)
+		}
 
-	printInfo(fmt.Sprintf("Secreto '%s' cargado exitosamente en la tabla de configuración", secretName))
+		// Encriptar el valor
+		printInfo("Encriptando valor del secreto...")
+		encryptedValue, err := encrypt(secretValue, aesSecret)
+		if err != nil {
+			printErrorAndExit(fmt.Errorf("error al encriptar el valor: %w", err))
+		}
+
+		// Insertar en DynamoDB
+		printInfo("Insertando secreto en la tabla de configuración...")
+		err = PutRecord(awsCredentials, "tvo-security-scan-parameter-prod", map[string]interface{}{
+			"parameter_id": secretName,
+			"value":        encryptedValue,
+		})
+		if err != nil {
+			printErrorAndExit(fmt.Errorf("error al insertar secreto en DynamoDB: %w", err))
+		}
+
+		printInfo(fmt.Sprintf("Secreto '%s' cargado exitosamente en la tabla de configuración", secretName))
+
+		// Preguntar si desea agregar otro secreto
+		addAnother, err := askForYesNo("¿Deseas agregar otro secreto? (s/N)")
+		if err != nil {
+			printErrorAndExit(err)
+		}
+		if !addAnother {
+			printInfo("Saliendo del cargador de secretos.")
+			break
+		}
+	}
 }
 
 // loadCredentialsFromFile carga las credenciales AWS desde un archivo JSON
