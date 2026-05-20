@@ -245,23 +245,21 @@ func deployInfra(config DeployConfig) error {
 		}
 	}
 
-	firstStageComponents := []struct {
-		repoDirName    string
-		label          string
-		downloadFn     func(string) error
-		buildRepeats   int
-		needsSubmodule bool
-	}{
-		{repoDirName: "titvo-agent-aws", label: "agent aws", downloadFn: DownloadAgentAWSSource, buildRepeats: 0, needsSubmodule: false},
-		{repoDirName: "titvo-auth-setup-aws", label: "auth setup", downloadFn: DownloadAuthSetupSource, buildRepeats: 1, needsSubmodule: true},
-		{repoDirName: "titvo-task-cli-files-aws", label: "task cli files", downloadFn: DownloadTaskCliFilesSource, buildRepeats: 1, needsSubmodule: true},
-		{repoDirName: "titvo-task-trigger-aws", label: "task trigger", downloadFn: DownloadTaskTriggerSource, buildRepeats: 1, needsSubmodule: true},
-		{repoDirName: "titvo-task-status-aws", label: "task status", downloadFn: DownloadTaskStatusSource, buildRepeats: 1, needsSubmodule: true},
+	if err := deployNodeComponent(infraDir, "titvo-git-commit-files-aws", "git commit files aws", DownloadGitCommitFilesAWSSource, env, 1, true); err != nil {
+		return err
 	}
-	for _, component := range firstStageComponents {
-		if err := deployNodeComponent(infraDir, component.repoDirName, component.label, component.downloadFn, env, component.buildRepeats, component.needsSubmodule); err != nil {
-			return err
-		}
+
+	if err := DownloadAgentAWSSource(infraDir); err != nil {
+		return fmt.Errorf("failed to download agent aws: %w", err)
+	}
+	agentSourceDir := path.Join(infraDir, "titvo-agent-aws")
+	if err := ensureDirExists(agentSourceDir, "agent aws directory %s does not exist"); err != nil {
+		return err
+	}
+	agentECRDir := path.Join(agentSourceDir, "aws", "ecr")
+	printInfo(fmt.Sprintf("Deploying agent ECR to %s", agentECRDir))
+	if err := applyTerragruntInDir(agentECRDir, "agent ECR", env); err != nil {
+		return err
 	}
 
 	if err := DownloadMCPGatewaySource(infraDir); err != nil {
@@ -310,22 +308,17 @@ func deployInfra(config DeployConfig) error {
 		return fmt.Errorf("terragrunt destroy installer ecr publisher failed: %w", err)
 	}
 
-	if err := deployTerraformComponentFromSource(mcpGatewaySourceDir, "MCP gateway", env); err != nil {
-		return err
-	}
-
-	secondStageComponents := []struct {
+	reportingComponents := []struct {
 		repoDirName    string
 		label          string
 		downloadFn     func(string) error
 		buildRepeat    int
 		needsSubmodule bool
 	}{
-		{repoDirName: "titvo-git-commit-files-aws", label: "git commit files aws", downloadFn: DownloadGitCommitFilesAWSSource, buildRepeat: 1, needsSubmodule: true},
 		{repoDirName: "titvo-issue-report-aws", label: "issue report aws", downloadFn: DownloadIssueReportAWSSource, buildRepeat: 1, needsSubmodule: true},
 	}
 	if config.BitbucketAPIToken != "" {
-		secondStageComponents = append(secondStageComponents, struct {
+		reportingComponents = append(reportingComponents, struct {
 			repoDirName    string
 			label          string
 			downloadFn     func(string) error
@@ -334,7 +327,7 @@ func deployInfra(config DeployConfig) error {
 		}{repoDirName: "titvo-bitbucket-code-insights-aws", label: "bitbucket code insights aws", downloadFn: DownloadBitbucketCodeInsightsAWSSource, buildRepeat: 1, needsSubmodule: true})
 	}
 	if config.GithubAccessToken != "" {
-		secondStageComponents = append(secondStageComponents, struct {
+		reportingComponents = append(reportingComponents, struct {
 			repoDirName    string
 			label          string
 			downloadFn     func(string) error
@@ -342,8 +335,34 @@ func deployInfra(config DeployConfig) error {
 			needsSubmodule bool
 		}{repoDirName: "titvo-github-issue-aws", label: "github issue aws", downloadFn: DownloadGithubIssueAWSSource, buildRepeat: 1, needsSubmodule: true})
 	}
-	for _, component := range secondStageComponents {
+	for _, component := range reportingComponents {
 		if err := deployNodeComponent(infraDir, component.repoDirName, component.label, component.downloadFn, env, component.buildRepeat, component.needsSubmodule); err != nil {
+			return err
+		}
+	}
+
+	if err := deployTerraformComponentFromSource(agentSourceDir, "agent aws", env); err != nil {
+		return err
+	}
+
+	if err := deployTerraformComponentFromSource(mcpGatewaySourceDir, "MCP gateway", env); err != nil {
+		return err
+	}
+
+	coreComponents := []struct {
+		repoDirName    string
+		label          string
+		downloadFn     func(string) error
+		buildRepeats   int
+		needsSubmodule bool
+	}{
+		{repoDirName: "titvo-auth-setup-aws", label: "auth setup", downloadFn: DownloadAuthSetupSource, buildRepeats: 1, needsSubmodule: true},
+		{repoDirName: "titvo-task-cli-files-aws", label: "task cli files", downloadFn: DownloadTaskCliFilesSource, buildRepeats: 1, needsSubmodule: true},
+		{repoDirName: "titvo-task-trigger-aws", label: "task trigger", downloadFn: DownloadTaskTriggerSource, buildRepeats: 1, needsSubmodule: true},
+		{repoDirName: "titvo-task-status-aws", label: "task status", downloadFn: DownloadTaskStatusSource, buildRepeats: 1, needsSubmodule: true},
+	}
+	for _, component := range coreComponents {
+		if err := deployNodeComponent(infraDir, component.repoDirName, component.label, component.downloadFn, env, component.buildRepeats, component.needsSubmodule); err != nil {
 			return err
 		}
 	}
