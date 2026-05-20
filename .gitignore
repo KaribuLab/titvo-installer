@@ -6,3 +6,4 @@ q*.tar.gz
 *.zip
 tli*
 !skills-lock.json
+*.log
