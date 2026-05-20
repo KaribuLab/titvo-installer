@@ -249,6 +249,19 @@ func deployInfra(config DeployConfig) error {
 		return err
 	}
 
+	if err := DownloadAgentAWSSource(infraDir); err != nil {
+		return fmt.Errorf("failed to download agent aws: %w", err)
+	}
+	agentSourceDir := path.Join(infraDir, "titvo-agent-aws")
+	if err := ensureDirExists(agentSourceDir, "agent aws directory %s does not exist"); err != nil {
+		return err
+	}
+	agentECRDir := path.Join(agentSourceDir, "aws", "ecr")
+	printInfo(fmt.Sprintf("Deploying agent ECR to %s", agentECRDir))
+	if err := applyTerragruntInDir(agentECRDir, "agent ECR", env); err != nil {
+		return err
+	}
+
 	if err := DownloadMCPGatewaySource(infraDir); err != nil {
 		return fmt.Errorf("failed to download MCP gateway: %w", err)
 	}
@@ -295,10 +308,6 @@ func deployInfra(config DeployConfig) error {
 		return fmt.Errorf("terragrunt destroy installer ecr publisher failed: %w", err)
 	}
 
-	if err := deployTerraformComponentFromSource(mcpGatewaySourceDir, "MCP gateway", env); err != nil {
-		return err
-	}
-
 	reportingComponents := []struct {
 		repoDirName    string
 		label          string
@@ -332,6 +341,14 @@ func deployInfra(config DeployConfig) error {
 		}
 	}
 
+	if err := deployTerraformComponentFromSource(agentSourceDir, "agent aws", env); err != nil {
+		return err
+	}
+
+	if err := deployTerraformComponentFromSource(mcpGatewaySourceDir, "MCP gateway", env); err != nil {
+		return err
+	}
+
 	coreComponents := []struct {
 		repoDirName    string
 		label          string
@@ -339,7 +356,6 @@ func deployInfra(config DeployConfig) error {
 		buildRepeats   int
 		needsSubmodule bool
 	}{
-		{repoDirName: "titvo-agent-aws", label: "agent aws", downloadFn: DownloadAgentAWSSource, buildRepeats: 0, needsSubmodule: false},
 		{repoDirName: "titvo-auth-setup-aws", label: "auth setup", downloadFn: DownloadAuthSetupSource, buildRepeats: 1, needsSubmodule: true},
 		{repoDirName: "titvo-task-cli-files-aws", label: "task cli files", downloadFn: DownloadTaskCliFilesSource, buildRepeats: 1, needsSubmodule: true},
 		{repoDirName: "titvo-task-trigger-aws", label: "task trigger", downloadFn: DownloadTaskTriggerSource, buildRepeats: 1, needsSubmodule: true},
