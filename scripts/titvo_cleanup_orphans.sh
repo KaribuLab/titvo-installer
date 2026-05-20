@@ -4,7 +4,20 @@ set -euo pipefail
 # Evita que AWS CLI abra un pager interactivo durante la limpieza.
 export AWS_PAGER=""
 
-PREFIX="${PREFIX:-tvo}"
+dotenv() {
+  local env_file="$1"
+  [[ -f "$env_file" ]] || return 0
+  set -a
+  # shellcheck disable=SC1090
+  source "$env_file"
+  set +a
+}
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+dotenv "$REPO_ROOT/.env"
+
+DEFAULT_PREFIXES=("tvo" "titvo")
 REGION="${AWS_REGION:-us-east-2}"
 APPLY=0
 
@@ -19,7 +32,12 @@ need jq
 run() {
   if [[ "$APPLY" -eq 1 ]]; then
     echo "[APPLY] $*"
-    eval "$@"
+    local _rc=0
+    eval "$@" || _rc=$?
+    if [[ "$_rc" -ne 0 ]]; then
+      echo "[WARN] comando fallo (rc=$_rc): $*"
+    fi
+    return 0
   else
     echo "[DRY-RUN] $*"
   fi
@@ -179,8 +197,8 @@ delete_subnets() {
   | jq -r --arg p "$PREFIX" '.Subnets[]?
       | select(
           (.Tags // []) | any(
-            (.Key == "Name" and ((.Value | ascii_downcase | startswith($p)) or (.Value | ascii_downcase | contains("titvo"))))
-            or (.Key == "Project" and (.Value | ascii_downcase | contains("titvo")))
+            (.Key == "Name" and (.Value | ascii_downcase | startswith($p)))
+            or (.Key == "Project" and (.Value | ascii_downcase | contains($p)))
           )
         )
       | .SubnetId')
@@ -238,12 +256,12 @@ delete_route_tables() {
     | jq -r --arg p "$PREFIX" '.RouteTables[]?
         | select(
             ((.Tags // []) | any(
-              (.Key == "Name" and ((.Value | ascii_downcase | startswith($p)) or (.Value | ascii_downcase | contains("titvo"))))
-              or (.Key == "Project" and (.Value | ascii_downcase | contains("titvo")))
+              (.Key == "Name" and (.Value | ascii_downcase | startswith($p)))
+              or (.Key == "Project" and (.Value | ascii_downcase | contains($p)))
             ))
           )
         | select(all(.Associations[]?; (.Main // false) | not))
-        | .RouteTableId')"
+        | .RouteTableId')"""
 
   while read -r rtb_id; do
     [[ -z "$rtb_id" ]] && continue
@@ -263,11 +281,12 @@ list_candidate_security_group_ids() {
     | select(.GroupName != "default")
     | select(.Description != "default VPC security group")
     | select(
-        (.GroupName | ascii_downcase | contains("titvo"))
-        or (.Description | ascii_downcase | contains("titvo"))
+        (.GroupName | ascii_downcase | startswith($p))
+        or (.GroupName | ascii_downcase | contains($p))
+        or (.Description | ascii_downcase | contains($p))
         or ((.Tags // []) | any(
-          (.Key == "Name" and ((.Value | ascii_downcase | startswith($p)) or (.Value | ascii_downcase | contains("titvo"))))
-          or (.Key == "Project" and (.Value | ascii_downcase | contains("titvo")))
+          (.Key == "Name" and (.Value | ascii_downcase | startswith($p)))
+          or (.Key == "Project" and (.Value | ascii_downcase | contains($p)))
         ))
       )
     | .GroupId'
@@ -284,8 +303,8 @@ delete_vpc_endpoints() {
       | select(
           any(.Groups[]?.GroupId; $sg_ids | index(.))
           or ((.Tags // []) | any(
-            (.Key == "Name" and ((.Value | ascii_downcase | startswith($p)) or (.Value | ascii_downcase | contains("titvo"))))
-            or (.Key == "Project" and (.Value | ascii_downcase | contains("titvo")))
+            (.Key == "Name" and (.Value | ascii_downcase | startswith($p)))
+            or (.Key == "Project" and (.Value | ascii_downcase | contains($p)))
           ))
         )
       | .VpcEndpointId')
@@ -351,11 +370,191 @@ wait_for_network_interfaces_deleted() {
   return 1
 }
 
+detach_and_delete_enis_for_sg() {
+  local group_id="$1"
+  local -a eni_ids=()
+  local eni_id
+  local attachment_id
+  local status
+
+  mapfile -t eni_ids < <(aws ec2 describe-network-interfaces \
+    --filters "Name=group-id,Values=$group_id" \
+    --region "$REGION" --output json 2>/dev/null \
+    | jq -r '.NetworkInterfaces[]?.NetworkInterfaceId')
+
+  for eni_id in "${eni_ids[@]}"; do
+    [[ -z "$eni_id" ]] && continue
+    status="$(aws ec2 describe-network-interfaces --network-interface-ids "$eni_id" --region "$REGION" --output json 2>/dev/null \
+      | jq -r '.NetworkInterfaces[0].Status // empty')"
+    attachment_id="$(aws ec2 describe-network-interfaces --network-interface-ids "$eni_id" --region "$REGION" --output json 2>/dev/null \
+      | jq -r '.NetworkInterfaces[0].Attachment.AttachmentId // empty')"
+
+    if [[ -n "$attachment_id" ]]; then
+      run "aws ec2 detach-network-interface --attachment-id \"$attachment_id\" --force --region \"$REGION\""
+    fi
+
+    if [[ "$status" == "available" || -n "$attachment_id" ]]; then
+      run "aws ec2 delete-network-interface --network-interface-id \"$eni_id\" --region \"$REGION\""
+    else
+      echo "[INFO] ENI $eni_id status=$status (no available, posiblemente gestionado por AWS); se intentara borrar igual"
+      run "aws ec2 delete-network-interface --network-interface-id \"$eni_id\" --region \"$REGION\""
+    fi
+  done
+
+  if [[ "$APPLY" -eq 1 && "${#eni_ids[@]}" -gt 0 ]]; then
+    wait_for_network_interfaces_deleted "${eni_ids[@]}" || true
+  fi
+}
+
+_build_targeted_permissions() {
+  # Devuelve, por cada SG que referencia $target en el sentido indicado
+  # (ingress o egress), pares "<group_id>\t<permission_json>" donde el
+  # permission_json es una copia minima del IpPermission que conserva
+  # protocolo/puertos pero deja UserIdGroupPairs SOLO con el target_sg y
+  # vacia IpRanges/Ipv6Ranges/PrefixListIds para no borrar reglas ajenas.
+  local target_sg="$1"
+  local direction="$2" # "ingress" | "egress"
+  local perms_field filter_name
+
+  if [[ "$direction" == "egress" ]]; then
+    perms_field="IpPermissionsEgress"
+    filter_name="egress.ip-permission.group-id"
+  else
+    perms_field="IpPermissions"
+    filter_name="ip-permission.group-id"
+  fi
+
+  aws ec2 describe-security-groups \
+    --filters "Name=$filter_name,Values=$target_sg" \
+    --region "$REGION" --output json 2>/dev/null \
+  | jq -r --arg target "$target_sg" --arg field "$perms_field" '
+      .SecurityGroups[]?
+      | . as $sg
+      | $sg[$field][]?
+      | select((.UserIdGroupPairs // []) | any(.GroupId == $target))
+      | {
+          IpProtocol: .IpProtocol,
+          FromPort: (if has("FromPort") then .FromPort else null end),
+          ToPort: (if has("ToPort") then .ToPort else null end),
+          UserIdGroupPairs: [ .UserIdGroupPairs[]? | select(.GroupId == $target) | {GroupId: .GroupId} ],
+          IpRanges: [],
+          Ipv6Ranges: [],
+          PrefixListIds: []
+        }
+      | with_entries(select(.value != null))
+      | [$sg.GroupId, (. | tostring)]
+      | @tsv
+    '
+}
+
+revoke_cross_sg_references() {
+  local target_sg="$1"
+  local other_sg
+  local perm_block
+
+  while IFS=$'\t' read -r other_sg perm_block; do
+    [[ -z "$other_sg" || "$other_sg" == "null" ]] && continue
+    run "aws ec2 revoke-security-group-ingress --group-id \"$other_sg\" --ip-permissions '$perm_block' --region \"$REGION\""
+  done < <(_build_targeted_permissions "$target_sg" "ingress")
+
+  while IFS=$'\t' read -r other_sg perm_block; do
+    [[ -z "$other_sg" || "$other_sg" == "null" ]] && continue
+    run "aws ec2 revoke-security-group-egress --group-id \"$other_sg\" --ip-permissions '$perm_block' --region \"$REGION\""
+  done < <(_build_targeted_permissions "$target_sg" "egress")
+}
+
+diagnose_sg_dependencies() {
+  local group_id="$1"
+  local enis
+  local sg_refs
+
+  echo "[DIAG] Dependencias residuales de $group_id:"
+
+  enis="$(aws ec2 describe-network-interfaces \
+    --filters "Name=group-id,Values=$group_id" \
+    --region "$REGION" --output json 2>/dev/null \
+    | jq -r '.NetworkInterfaces[]? | "  ENI \(.NetworkInterfaceId) status=\(.Status) desc=\"\(.Description // "")\" attach=\(.Attachment.InstanceId // .Attachment.AttachmentId // "none")"')"
+  if [[ -n "$enis" ]]; then
+    echo "$enis"
+  else
+    echo "  (sin ENIs)"
+  fi
+
+  sg_refs="$(aws ec2 describe-security-groups \
+    --filters "Name=ip-permission.group-id,Values=$group_id" \
+    --region "$REGION" --output json 2>/dev/null \
+    | jq -r '.SecurityGroups[]? | "  SG ref ingress: \(.GroupId) (\(.GroupName))"')"
+  if [[ -n "$sg_refs" ]]; then
+    echo "$sg_refs"
+  fi
+
+  sg_refs="$(aws ec2 describe-security-groups \
+    --filters "Name=egress.ip-permission.group-id,Values=$group_id" \
+    --region "$REGION" --output json 2>/dev/null \
+    | jq -r '.SecurityGroups[]? | "  SG ref egress:  \(.GroupId) (\(.GroupName))"')"
+  if [[ -n "$sg_refs" ]]; then
+    echo "$sg_refs"
+  fi
+}
+
+try_delete_security_group() {
+  local group_id="$1"
+  local max_attempts=6
+  local sleep_seconds=10
+  local attempt=1
+  local rc=0
+  local err
+
+  while [[ "$attempt" -le "$max_attempts" ]]; do
+    if [[ "$APPLY" -eq 1 ]]; then
+      err="$(aws ec2 delete-security-group --group-id "$group_id" --region "$REGION" 2>&1)"
+      rc=$?
+    else
+      echo "[DRY-RUN] aws ec2 delete-security-group --group-id \"$group_id\" --region \"$REGION\""
+      return 0
+    fi
+
+    if [[ "$rc" -eq 0 ]]; then
+      echo "[OK] SG eliminado: $group_id"
+      return 0
+    fi
+
+    if echo "$err" | grep -q "InvalidGroup.NotFound"; then
+      echo "[OK] SG $group_id ya no existe"
+      return 0
+    fi
+
+    echo "[WARN] No se pudo borrar $group_id (intento $attempt/$max_attempts): $err"
+
+    if echo "$err" | grep -q "DependencyViolation"; then
+      detach_and_delete_enis_for_sg "$group_id"
+      revoke_cross_sg_references "$group_id"
+    fi
+
+    sleep "$sleep_seconds"
+    attempt=$((attempt + 1))
+  done
+
+  echo "[ERROR] No se logro borrar SG $group_id tras $max_attempts intentos"
+  diagnose_sg_dependencies "$group_id"
+  return 1
+}
+
 delete_security_groups() {
-  list_candidate_security_group_ids \
-  | while read -r group_id; do
+  local -a group_ids=()
+  local group_id
+
+  mapfile -t group_ids < <(list_candidate_security_group_ids)
+
+  for group_id in "${group_ids[@]}"; do
     [[ -z "$group_id" ]] && continue
-    run "aws ec2 delete-security-group --group-id \"$group_id\" --region \"$REGION\""
+    revoke_cross_sg_references "$group_id"
+    detach_and_delete_enis_for_sg "$group_id"
+  done
+
+  for group_id in "${group_ids[@]}"; do
+    [[ -z "$group_id" ]] && continue
+    try_delete_security_group "$group_id" || true
   done
 }
 
@@ -582,7 +781,10 @@ while read -r jd; do
   done < <(echo "$data" | jq -r '.jobDefinitions[]?.containerProperties.jobRoleArn, .jobDefinitions[]?.containerProperties.executionRoleArn')
 done <<< "$jobdefs"
 
-echo "== Inicio limpieza candidatos prefix '$PREFIX' (region $REGION) =="
+run_cleanup_for_prefix() {
+  local current_prefix="$1"
+  PREFIX="$current_prefix"
+  echo "== Inicio limpieza candidatos prefix '$PREFIX' (region $REGION) =="
 
 # 1) EventBridge rules + targets
 # default bus rules with prefix
@@ -767,9 +969,9 @@ aws s3api list-buckets --region "$REGION" --output json \
   run "aws s3api delete-bucket --bucket \"$b\" --region \"$REGION\""
 done
 
-# 13) Cloud Map (namespace contiene titvo)
+# 13) Cloud Map (namespace contiene prefijo)
 aws servicediscovery list-namespaces --region "$REGION" --output json \
-| jq -r '.Namespaces[]? | select(.Name | contains("titvo")) | .Id' \
+| jq -r --arg p "$PREFIX" '.Namespaces[]? | select(.Name | contains($p)) | .Id' \
 | while read -r namespace_id; do
   [[ -z "$namespace_id" ]] && continue
   delete_cloud_map_namespace "$namespace_id"
@@ -787,8 +989,8 @@ mapfile -t ENI_IDS < <(aws ec2 describe-network-interfaces --region "$REGION" --
 | jq -r --arg p "$PREFIX" '.NetworkInterfaces[]?
     | select(.Status == "available")
     | select(
-        any(.TagSet[]?; (.Key == "Name" and ((.Value | ascii_downcase | startswith($p)) or (.Value | ascii_downcase | contains("titvo"))))
-          or (.Key == "Project" and (.Value | ascii_downcase | contains("titvo"))))
+        any(.TagSet[]?; (.Key == "Name" and (.Value | ascii_downcase | startswith($p)))
+          or (.Key == "Project" and (.Value | ascii_downcase | contains($p))))
     )
     | .NetworkInterfaceId')
 
@@ -841,5 +1043,25 @@ aws iam list-policies --scope Local --output json | jq -r --arg p "$PREFIX" '.Po
   fi
 done
 
-echo "== Fin =="
+  echo "== Fin limpieza para prefijo '$PREFIX' =="
+}
+
+# Ejecutar limpieza con prefijos
+# Si el usuario especifico PREFIX via variable de entorno, usar solo ese
+# Si no, usar ambos prefijos por defecto: tvo y titvo
+
+if [[ -n "${PREFIX:-}" ]]; then
+  echo "Iniciando limpieza con prefijo '$PREFIX' (especificado por variable de entorno)..."
+  echo ""
+  run_cleanup_for_prefix "$PREFIX"
+else
+  echo "Iniciando limpieza con prefijos por defecto..."
+  echo ""
+  for prefix in "${DEFAULT_PREFIXES[@]}"; do
+    run_cleanup_for_prefix "$prefix"
+    echo ""
+  done
+fi
+
+echo "== Limpieza completada =="
 echo "Tip: primero ejecuta sin --apply; luego con --apply"
