@@ -41,6 +41,13 @@ func TerraformBinaryPath(binDir string, osType OS) string {
 	return path.Join(binDir, toolExecutable("terraform", osType))
 }
 
+func NpmBinaryPath(nodeBinDir string, osType OS) string {
+	if osType == Windows {
+		return path.Join(nodeBinDir, "npm.cmd")
+	}
+	return path.Join(nodeBinDir, "npm")
+}
+
 func toolBinaryVersion(binaryPath string) (string, error) {
 	output, err := exec.Command(binaryPath, "--version").CombinedOutput()
 	if err != nil {
@@ -79,6 +86,7 @@ func LogConfiguredToolBinaries(config InstallToolConfig) error {
 	terragruntPath := TerragruntBinaryPath(config.TerragruntBinDir, config.OS)
 	terraformPath := TerraformBinaryPath(config.TerraformBinDir, config.OS)
 	nodePath := path.Join(config.NodeBinDir, toolExecutable("node", config.OS))
+	npmPath := NpmBinaryPath(config.NodeBinDir, config.OS)
 
 	if err := logToolBinary("Terragrunt", terragruntPath); err != nil {
 		return err
@@ -89,9 +97,13 @@ func LogConfiguredToolBinaries(config InstallToolConfig) error {
 	if err := logToolBinary("Node", nodePath); err != nil {
 		return err
 	}
+	if err := logToolBinary("NPM", npmPath); err != nil {
+		return err
+	}
 
 	warnIfDifferentBinaryInPath("terragrunt", terragruntPath)
 	warnIfDifferentBinaryInPath("terraform", terraformPath)
+	warnIfDifferentBinaryInPath("npm", npmPath)
 
 	return nil
 }

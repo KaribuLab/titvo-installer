@@ -16,12 +16,13 @@ func TestLogConfiguredToolBinaries(t *testing.T) {
 	terragruntPath := filepath.Join(binDir, "terragrunt")
 	terraformPath := filepath.Join(binDir, "terraform")
 	nodePath := filepath.Join(dir, "node", "bin", "node")
+	npmPath := filepath.Join(dir, "node", "bin", "npm")
 	if err := os.MkdirAll(filepath.Dir(nodePath), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
 	versionScript := "#!/bin/sh\necho \"test-tool v1.2.3\"\n"
-	for _, binaryPath := range []string{terragruntPath, terraformPath, nodePath} {
+	for _, binaryPath := range []string{terragruntPath, terraformPath, nodePath, npmPath} {
 		if err := os.WriteFile(binaryPath, []byte(versionScript), 0o755); err != nil {
 			t.Fatal(err)
 		}

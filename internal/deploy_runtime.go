@@ -41,13 +41,13 @@ func runTerragrunt(dir, terragruntPath string, env map[string]string, action str
 	return executeWithOptionsFn(terragruntPath, &ExecuteOptions{WorkingDir: dir, Env: env}, "run-all", action, "-input=false", "-auto-approve", "--terragrunt-non-interactive")
 }
 
-func runBuild(sourceDir string, repeats int) error {
+func runBuild(sourceDir, npmPath string, repeats int) error {
 	for range repeats {
 		printInfo("Executing build with npm")
-		if err := executeWithOptionsFn("npm", &ExecuteOptions{WorkingDir: sourceDir}, "ci"); err != nil {
+		if err := executeWithOptionsFn(npmPath, &ExecuteOptions{WorkingDir: sourceDir}, "ci"); err != nil {
 			return fmt.Errorf("npm ci failed: %w", err)
 		}
-		if err := executeWithOptionsFn("npm", &ExecuteOptions{WorkingDir: sourceDir}, "run", "build"); err != nil {
+		if err := executeWithOptionsFn(npmPath, &ExecuteOptions{WorkingDir: sourceDir}, "run", "build"); err != nil {
 			return fmt.Errorf("npm run build failed: %w", err)
 		}
 	}
@@ -74,7 +74,7 @@ func deployTerraformComponentFromSource(sourceDir, label, terragruntPath string,
 	return applyTerragruntInDir(prodDir, label, terragruntPath, env)
 }
 
-func deployNodeComponentFromSource(sourceDir, label, terragruntPath string, env map[string]string, buildRepeats int, needsSubmodules bool) error {
+func deployNodeComponentFromSource(sourceDir, label, terragruntPath, npmPath string, env map[string]string, buildRepeats int, needsSubmodules bool) error {
 	if err := ensureDirExists(sourceDir, "%s directory does not exist"); err != nil {
 		return err
 	}
@@ -87,7 +87,7 @@ func deployNodeComponentFromSource(sourceDir, label, terragruntPath string, env 
 	}
 
 	if buildRepeats > 0 {
-		if err := runBuild(sourceDir, buildRepeats); err != nil {
+		if err := runBuild(sourceDir, npmPath, buildRepeats); err != nil {
 			return err
 		}
 	}
@@ -95,13 +95,13 @@ func deployNodeComponentFromSource(sourceDir, label, terragruntPath string, env 
 	return deployTerraformComponentFromSource(sourceDir, label, terragruntPath, env)
 }
 
-func deployNodeComponent(infraDir, repoDirName, label, terragruntPath string, downloadFn func(string) error, env map[string]string, buildRepeats int, needsSubmodules bool) error {
+func deployNodeComponent(infraDir, repoDirName, label, terragruntPath, npmPath string, downloadFn func(string) error, env map[string]string, buildRepeats int, needsSubmodules bool) error {
 	if err := downloadFn(infraDir); err != nil {
 		return fmt.Errorf("failed to download %s: %w", label, err)
 	}
 
 	sourceDir := path.Join(infraDir, repoDirName)
-	return deployNodeComponentFromSource(sourceDir, label, terragruntPath, env, buildRepeats, needsSubmodules)
+	return deployNodeComponentFromSource(sourceDir, label, terragruntPath, npmPath, env, buildRepeats, needsSubmodules)
 }
 
 func deployInfra(config DeployConfig) error {
@@ -122,6 +122,7 @@ func deployInfra(config DeployConfig) error {
 
 	terragruntPath := TerragruntBinaryPath(config.InstallToolConfig.TerragruntBinDir, config.InstallToolConfig.OS)
 	terraformPath := TerraformBinaryPath(config.InstallToolConfig.TerraformBinDir, config.InstallToolConfig.OS)
+	npmPath := NpmBinaryPath(config.InstallToolConfig.NodeBinDir, config.InstallToolConfig.OS)
 
 	if err := logConfiguredToolBinariesFn(config.InstallToolConfig); err != nil {
 		return fmt.Errorf("failed to validate tool binaries: %w", err)
@@ -254,7 +255,7 @@ func deployInfra(config DeployConfig) error {
 		}
 	}
 
-	if err := deployNodeComponent(infraDir, "titvo-git-commit-files-aws", "git commit files aws", terragruntPath, DownloadGitCommitFilesAWSSource, env, 1, true); err != nil {
+	if err := deployNodeComponent(infraDir, "titvo-git-commit-files-aws", "git commit files aws", terragruntPath, npmPath, DownloadGitCommitFilesAWSSource, env, 1, true); err != nil {
 		return err
 	}
 
@@ -345,7 +346,7 @@ func deployInfra(config DeployConfig) error {
 		}{repoDirName: "titvo-github-issue-aws", label: "github issue aws", downloadFn: DownloadGithubIssueAWSSource, buildRepeat: 1, needsSubmodule: true})
 	}
 	for _, component := range reportingComponents {
-		if err := deployNodeComponent(infraDir, component.repoDirName, component.label, terragruntPath, component.downloadFn, env, component.buildRepeat, component.needsSubmodule); err != nil {
+		if err := deployNodeComponent(infraDir, component.repoDirName, component.label, terragruntPath, npmPath, component.downloadFn, env, component.buildRepeat, component.needsSubmodule); err != nil {
 			return err
 		}
 	}
@@ -371,7 +372,7 @@ func deployInfra(config DeployConfig) error {
 		{repoDirName: "titvo-task-status-aws", label: "task status", downloadFn: DownloadTaskStatusSource, buildRepeats: 1, needsSubmodule: true},
 	}
 	for _, component := range coreComponents {
-		if err := deployNodeComponent(infraDir, component.repoDirName, component.label, terragruntPath, component.downloadFn, env, component.buildRepeats, component.needsSubmodule); err != nil {
+		if err := deployNodeComponent(infraDir, component.repoDirName, component.label, terragruntPath, npmPath, component.downloadFn, env, component.buildRepeats, component.needsSubmodule); err != nil {
 			return err
 		}
 	}
