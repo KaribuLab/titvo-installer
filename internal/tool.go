@@ -201,11 +201,8 @@ func DownloadNode(dir string, version string, osType OS, arch Arch) (string, err
 	if err != nil {
 		return "", err
 	}
-	npmCommand := "npm"
-	if osType == Windows {
-		npmCommand = path.Join(nodeBinDir, "npm.cmd")
-	}
-	err = ExecuteWithOptions(npmCommand, &ExecuteOptions{
+	npmPath := NpmBinaryPath(nodeBinDir, osType)
+	err = ExecuteWithOptions(npmPath, &ExecuteOptions{
 		WorkingDir: nodeBinDir,
 	}, "--version")
 	if err != nil {
