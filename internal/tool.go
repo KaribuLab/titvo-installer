@@ -204,6 +204,7 @@ func DownloadNode(dir string, version string, osType OS, arch Arch) (string, err
 	npmPath := NpmBinaryPath(nodeBinDir, osType)
 	err = ExecuteWithOptions(npmPath, &ExecuteOptions{
 		WorkingDir: nodeBinDir,
+		Env:        map[string]string{"PATH": nodeBinDir},
 	}, "--version")
 	if err != nil {
 		return "", err
