@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"strings"
 )
 
 type OS string
@@ -67,6 +68,34 @@ func Execute(command string, args ...string) error {
 	return ExecuteWithOptions(command, nil, args...)
 }
 
+func mergeEnv(base []string, overrides map[string]string) []string {
+	merged := make(map[string]string, len(base)+len(overrides))
+	order := make([]string, 0, len(base)+len(overrides))
+
+	for _, kv := range base {
+		key, value, ok := strings.Cut(kv, "=")
+		if !ok {
+			continue
+		}
+		if _, exists := merged[key]; !exists {
+			order = append(order, key)
+		}
+		merged[key] = value
+	}
+	for key, value := range overrides {
+		if _, exists := merged[key]; !exists {
+			order = append(order, key)
+		}
+		merged[key] = value
+	}
+
+	env := make([]string, 0, len(order))
+	for _, key := range order {
+		env = append(env, key+"="+merged[key])
+	}
+	return env
+}
+
 func ExecuteWithOptions(command string, options *ExecuteOptions, args ...string) error {
 	cmd := exec.Command(command, args...)
 
@@ -79,13 +108,7 @@ func ExecuteWithOptions(command string, options *ExecuteOptions, args ...string)
 			cmd.Dir = options.WorkingDir
 		}
 		if options.Env != nil {
-			// Comenzar con el entorno actual del proceso
-			env := os.Environ()
-			// Agregar/sobrescribir las variables específicas
-			for key, value := range options.Env {
-				env = append(env, fmt.Sprintf("%s=%s", key, value))
-			}
-			cmd.Env = env
+			cmd.Env = mergeEnv(os.Environ(), options.Env)
 		}
 	}
 

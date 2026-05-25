@@ -3,7 +3,9 @@ package internal
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path"
+	"strings"
 )
 
 // https://github.com/gruntwork-io/terragrunt/releases/download/v0.69.1/terragrunt_darwin_amd64
@@ -23,6 +25,76 @@ const terraformUrl = "https://releases.hashicorp.com/terraform/%s/terraform_%s_%
 // https://nodejs.org/download/release/v20.19.4/node-v20.19.4-linux-x64.tar.gz
 // https://nodejs.org/download/release/v20.19.4/node-v20.19.4-win-x64.zip
 const nodeUrl = "https://nodejs.org/download/release/v%s/node-v%s-%s-%s.%s"
+
+func toolExecutable(name string, osType OS) string {
+	if osType == Windows {
+		return name + ".exe"
+	}
+	return name
+}
+
+func TerragruntBinaryPath(binDir string, osType OS) string {
+	return path.Join(binDir, toolExecutable("terragrunt", osType))
+}
+
+func TerraformBinaryPath(binDir string, osType OS) string {
+	return path.Join(binDir, toolExecutable("terraform", osType))
+}
+
+func toolBinaryVersion(binaryPath string) (string, error) {
+	output, err := exec.Command(binaryPath, "--version").CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("command failed: %v", err)
+	}
+	versionLine, _, _ := strings.Cut(strings.TrimSpace(string(output)), "\n")
+	return versionLine, nil
+}
+
+func logToolBinary(label, binaryPath string) error {
+	if _, err := os.Stat(binaryPath); err != nil {
+		return fmt.Errorf("%s binary not found at %s: %w", label, binaryPath, err)
+	}
+	version, err := toolBinaryVersion(binaryPath)
+	if err != nil {
+		return fmt.Errorf("%s binary at %s failed version check: %w", label, binaryPath, err)
+	}
+	printInfo(fmt.Sprintf("Using %s: %s (%s)", label, binaryPath, version))
+	return nil
+}
+
+func warnIfDifferentBinaryInPath(commandName, expectedPath string) {
+	lookedUp, err := exec.LookPath(commandName)
+	if err != nil {
+		return
+	}
+	if lookedUp != expectedPath {
+		printAskQuestion(fmt.Sprintf(
+			"Warning: %q in PATH resolves to %s, but installer will use %s",
+			commandName, lookedUp, expectedPath,
+		))
+	}
+}
+
+func LogConfiguredToolBinaries(config InstallToolConfig) error {
+	terragruntPath := TerragruntBinaryPath(config.TerragruntBinDir, config.OS)
+	terraformPath := TerraformBinaryPath(config.TerraformBinDir, config.OS)
+	nodePath := path.Join(config.NodeBinDir, toolExecutable("node", config.OS))
+
+	if err := logToolBinary("Terragrunt", terragruntPath); err != nil {
+		return err
+	}
+	if err := logToolBinary("Terraform (TG_TF_PATH)", terraformPath); err != nil {
+		return err
+	}
+	if err := logToolBinary("Node", nodePath); err != nil {
+		return err
+	}
+
+	warnIfDifferentBinaryInPath("terragrunt", terragruntPath)
+	warnIfDifferentBinaryInPath("terraform", terraformPath)
+
+	return nil
+}
 
 func DownloadTerragrunt(dir string, version string, osType OS, arch Arch) (string, error) {
 	url := fmt.Sprintf(terragruntUrl, version, osType, arch)
@@ -44,7 +116,8 @@ func DownloadTerragrunt(dir string, version string, osType OS, arch Arch) (strin
 			return "", err
 		}
 	}
-	err = ExecuteWithOptions("terragrunt", &ExecuteOptions{
+	terragruntPath := TerragruntBinaryPath(dir, osType)
+	err = ExecuteWithOptions(terragruntPath, &ExecuteOptions{
 		WorkingDir: dir,
 	}, "--version")
 	if err != nil {
@@ -70,7 +143,8 @@ func DownloadTerraform(dir string, version string, osType OS, arch Arch) (string
 		return "", err
 	}
 
-	err = ExecuteWithOptions("terraform", &ExecuteOptions{
+	terraformPath := TerraformBinaryPath(dir, osType)
+	err = ExecuteWithOptions(terraformPath, &ExecuteOptions{
 		WorkingDir: dir,
 	}, "--version")
 	if err != nil {
@@ -107,14 +181,20 @@ func DownloadNode(dir string, version string, osType OS, arch Arch) (string, err
 	if err != nil {
 		return "", err
 	}
-	err = ExecuteWithOptions("node", &ExecuteOptions{
-		WorkingDir: path.Join(dir, nodeDir, "bin"),
+	nodeBinDir := path.Join(dir, nodeDir, "bin")
+	nodePath := path.Join(nodeBinDir, toolExecutable("node", osType))
+	err = ExecuteWithOptions(nodePath, &ExecuteOptions{
+		WorkingDir: nodeBinDir,
 	}, "--version")
 	if err != nil {
 		return "", err
 	}
-	err = ExecuteWithOptions("npm", &ExecuteOptions{
-		WorkingDir: path.Join(dir, nodeDir, "bin"),
+	npmCommand := "npm"
+	if osType == Windows {
+		npmCommand = path.Join(nodeBinDir, "npm.cmd")
+	}
+	err = ExecuteWithOptions(npmCommand, &ExecuteOptions{
+		WorkingDir: nodeBinDir,
 	}, "--version")
 	if err != nil {
 		return "", err
@@ -167,7 +247,7 @@ func InstallTools() (config *InstallToolConfig, err error) {
 		return nil, err
 	}
 	printInfo(fmt.Sprintf("Node downloaded to %s", nodeDir))
-	return &InstallToolConfig{
+	config = &InstallToolConfig{
 		Dir:              binDir,
 		OS:               os,
 		Arch:             arch,
@@ -175,5 +255,9 @@ func InstallTools() (config *InstallToolConfig, err error) {
 		TerraformBinDir:  terraformDir,
 		NodeBinDir:       path.Join(nodeDir, "bin"),
 		TerragruntBinDir: terragruntDir,
-	}, nil
+	}
+	if err := LogConfiguredToolBinaries(*config); err != nil {
+		return nil, err
+	}
+	return config, nil
 }

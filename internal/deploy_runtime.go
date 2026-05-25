@@ -15,6 +15,7 @@ type privateSubnetConfig struct {
 }
 
 var executeWithOptionsFn = ExecuteWithOptions
+var logConfiguredToolBinariesFn = LogConfiguredToolBinaries
 var getAccountIDFn = GetAccountID
 var putParameterFn = PutParameter
 var createSecretFn = CreateSecret
@@ -36,8 +37,8 @@ func ensureDirExists(dir, errMsg string) error {
 	return nil
 }
 
-func runTerragrunt(dir string, env map[string]string, action string) error {
-	return executeWithOptionsFn("terragrunt", &ExecuteOptions{WorkingDir: dir, Env: env}, "run-all", action, "-input=false", "-auto-approve", "--terragrunt-non-interactive")
+func runTerragrunt(dir, terragruntPath string, env map[string]string, action string) error {
+	return executeWithOptionsFn(terragruntPath, &ExecuteOptions{WorkingDir: dir, Env: env}, "run-all", action, "-input=false", "-auto-approve", "--terragrunt-non-interactive")
 }
 
 func runBuild(sourceDir string, repeats int) error {
@@ -53,27 +54,27 @@ func runBuild(sourceDir string, repeats int) error {
 	return nil
 }
 
-func applyTerragruntInDir(dir, label string, env map[string]string) error {
+func applyTerragruntInDir(dir, label, terragruntPath string, env map[string]string) error {
 	if err := ensureDirExists(dir, "%s directory does not exist"); err != nil {
 		return err
 	}
 	printInfo(fmt.Sprintf("Executing terragrunt apply %s", label))
-	if err := runTerragrunt(dir, env, "apply"); err != nil {
+	if err := runTerragrunt(dir, terragruntPath, env, "apply"); err != nil {
 		return fmt.Errorf("terragrunt apply %s failed: %w", label, err)
 	}
 	return nil
 }
 
-func deployTerraformComponentFromSource(sourceDir, label string, env map[string]string) error {
+func deployTerraformComponentFromSource(sourceDir, label, terragruntPath string, env map[string]string) error {
 	if err := ensureDirExists(sourceDir, "%s directory does not exist"); err != nil {
 		return err
 	}
 	prodDir := path.Join(sourceDir, "aws")
 	printInfo(fmt.Sprintf("Deploying %s to %s", label, prodDir))
-	return applyTerragruntInDir(prodDir, label, env)
+	return applyTerragruntInDir(prodDir, label, terragruntPath, env)
 }
 
-func deployNodeComponentFromSource(sourceDir, label string, env map[string]string, buildRepeats int, needsSubmodules bool) error {
+func deployNodeComponentFromSource(sourceDir, label, terragruntPath string, env map[string]string, buildRepeats int, needsSubmodules bool) error {
 	if err := ensureDirExists(sourceDir, "%s directory does not exist"); err != nil {
 		return err
 	}
@@ -91,16 +92,16 @@ func deployNodeComponentFromSource(sourceDir, label string, env map[string]strin
 		}
 	}
 
-	return deployTerraformComponentFromSource(sourceDir, label, env)
+	return deployTerraformComponentFromSource(sourceDir, label, terragruntPath, env)
 }
 
-func deployNodeComponent(infraDir, repoDirName, label string, downloadFn func(string) error, env map[string]string, buildRepeats int, needsSubmodules bool) error {
+func deployNodeComponent(infraDir, repoDirName, label, terragruntPath string, downloadFn func(string) error, env map[string]string, buildRepeats int, needsSubmodules bool) error {
 	if err := downloadFn(infraDir); err != nil {
 		return fmt.Errorf("failed to download %s: %w", label, err)
 	}
 
 	sourceDir := path.Join(infraDir, repoDirName)
-	return deployNodeComponentFromSource(sourceDir, label, env, buildRepeats, needsSubmodules)
+	return deployNodeComponentFromSource(sourceDir, label, terragruntPath, env, buildRepeats, needsSubmodules)
 }
 
 func deployInfra(config DeployConfig) error {
@@ -118,6 +119,13 @@ func deployInfra(config DeployConfig) error {
 	}
 	baseProdDir := path.Join(baseSourceDir, "prod", "us-east-1")
 	printInfo(fmt.Sprintf("Deploying infra to %s", baseProdDir))
+
+	terragruntPath := TerragruntBinaryPath(config.InstallToolConfig.TerragruntBinDir, config.InstallToolConfig.OS)
+	terraformPath := TerraformBinaryPath(config.InstallToolConfig.TerraformBinDir, config.InstallToolConfig.OS)
+
+	if err := logConfiguredToolBinariesFn(config.InstallToolConfig); err != nil {
+		return fmt.Errorf("failed to validate tool binaries: %w", err)
+	}
 
 	currentPathEnv := os.Getenv("PATH")
 	var newPathEnv string
@@ -145,6 +153,7 @@ func deployInfra(config DeployConfig) error {
 		"TG_PLUGIN_CACHE_DIR":   pluginCacheDir,
 		"AWS_STAGE":             "prod",
 		"PATH":                  newPathEnv,
+		"TG_TF_PATH":            terraformPath,
 	}
 	if config.Debug {
 		env["TG_LOG"] = "debug"
@@ -199,7 +208,7 @@ func deployInfra(config DeployConfig) error {
 	}
 
 	printInfo("Executing terragrunt apply base infra")
-	if err := runTerragrunt(baseProdDir, env, "apply"); err != nil {
+	if err := runTerragrunt(baseProdDir, terragruntPath, env, "apply"); err != nil {
 		return fmt.Errorf("terragrunt apply failed: %w", err)
 	}
 
@@ -245,7 +254,7 @@ func deployInfra(config DeployConfig) error {
 		}
 	}
 
-	if err := deployNodeComponent(infraDir, "titvo-git-commit-files-aws", "git commit files aws", DownloadGitCommitFilesAWSSource, env, 1, true); err != nil {
+	if err := deployNodeComponent(infraDir, "titvo-git-commit-files-aws", "git commit files aws", terragruntPath, DownloadGitCommitFilesAWSSource, env, 1, true); err != nil {
 		return err
 	}
 
@@ -258,7 +267,7 @@ func deployInfra(config DeployConfig) error {
 	}
 	agentECRDir := path.Join(agentSourceDir, "aws", "ecr")
 	printInfo(fmt.Sprintf("Deploying agent ECR to %s", agentECRDir))
-	if err := applyTerragruntInDir(agentECRDir, "agent ECR", env); err != nil {
+	if err := applyTerragruntInDir(agentECRDir, "agent ECR", terragruntPath, env); err != nil {
 		return err
 	}
 
@@ -271,7 +280,7 @@ func deployInfra(config DeployConfig) error {
 	}
 	mcpGatewayECRDir := path.Join(mcpGatewaySourceDir, "aws", "ecr")
 	printInfo(fmt.Sprintf("Deploying MCP gateway ECR to %s", mcpGatewayECRDir))
-	if err := applyTerragruntInDir(mcpGatewayECRDir, "MCP gateway ECR", env); err != nil {
+	if err := applyTerragruntInDir(mcpGatewayECRDir, "MCP gateway ECR", terragruntPath, env); err != nil {
 		return err
 	}
 
@@ -284,7 +293,7 @@ func deployInfra(config DeployConfig) error {
 	}
 	ecrPublisherAWSDir := path.Join(ecrPublisherSource, "aws")
 	printInfo("Executing terragrunt apply installer ecr publisher")
-	if err := runTerragrunt(ecrPublisherAWSDir, env, "apply"); err != nil {
+	if err := runTerragrunt(ecrPublisherAWSDir, terragruntPath, env, "apply"); err != nil {
 		return fmt.Errorf("terragrunt apply installer ecr publisher failed: %w", err)
 	}
 
@@ -304,7 +313,7 @@ func deployInfra(config DeployConfig) error {
 	}
 
 	printInfo("Destroying installer ecr publisher")
-	if err := runTerragrunt(ecrPublisherAWSDir, env, "destroy"); err != nil {
+	if err := runTerragrunt(ecrPublisherAWSDir, terragruntPath, env, "destroy"); err != nil {
 		return fmt.Errorf("terragrunt destroy installer ecr publisher failed: %w", err)
 	}
 
@@ -336,16 +345,16 @@ func deployInfra(config DeployConfig) error {
 		}{repoDirName: "titvo-github-issue-aws", label: "github issue aws", downloadFn: DownloadGithubIssueAWSSource, buildRepeat: 1, needsSubmodule: true})
 	}
 	for _, component := range reportingComponents {
-		if err := deployNodeComponent(infraDir, component.repoDirName, component.label, component.downloadFn, env, component.buildRepeat, component.needsSubmodule); err != nil {
+		if err := deployNodeComponent(infraDir, component.repoDirName, component.label, terragruntPath, component.downloadFn, env, component.buildRepeat, component.needsSubmodule); err != nil {
 			return err
 		}
 	}
 
-	if err := deployTerraformComponentFromSource(agentSourceDir, "agent aws", env); err != nil {
+	if err := deployTerraformComponentFromSource(agentSourceDir, "agent aws", terragruntPath, env); err != nil {
 		return err
 	}
 
-	if err := deployTerraformComponentFromSource(mcpGatewaySourceDir, "MCP gateway", env); err != nil {
+	if err := deployTerraformComponentFromSource(mcpGatewaySourceDir, "MCP gateway", terragruntPath, env); err != nil {
 		return err
 	}
 
@@ -362,7 +371,7 @@ func deployInfra(config DeployConfig) error {
 		{repoDirName: "titvo-task-status-aws", label: "task status", downloadFn: DownloadTaskStatusSource, buildRepeats: 1, needsSubmodule: true},
 	}
 	for _, component := range coreComponents {
-		if err := deployNodeComponent(infraDir, component.repoDirName, component.label, component.downloadFn, env, component.buildRepeats, component.needsSubmodule); err != nil {
+		if err := deployNodeComponent(infraDir, component.repoDirName, component.label, terragruntPath, component.downloadFn, env, component.buildRepeats, component.needsSubmodule); err != nil {
 			return err
 		}
 	}

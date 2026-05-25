@@ -9,6 +9,11 @@ import (
 	"testing"
 )
 
+func isTerragruntCommand(command string) bool {
+	base := filepath.Base(command)
+	return base == "terragrunt" || base == "terragrunt.exe"
+}
+
 func successfulDeployStubs() {
 	mkdirAllFn = os.MkdirAll
 	downloadSourceFn = func(dir, sourceURL, component string) error { return nil }
@@ -59,6 +64,7 @@ func validDeployConfig(titvoDir string) DeployConfig {
 func withRuntimeStubs(t *testing.T) {
 	t.Helper()
 	origExec := executeWithOptionsFn
+	origLogTools := logConfiguredToolBinariesFn
 	origGetAccount := getAccountIDFn
 	origPut := putParameterFn
 	origCreateSecret := createSecretFn
@@ -68,8 +74,11 @@ func withRuntimeStubs(t *testing.T) {
 	origDownload := downloadSourceFn
 	origMkdirAll := mkdirAllFn
 
+	logConfiguredToolBinariesFn = func(config InstallToolConfig) error { return nil }
+
 	t.Cleanup(func() {
 		executeWithOptionsFn = origExec
+		logConfiguredToolBinariesFn = origLogTools
 		getAccountIDFn = origGetAccount
 		putParameterFn = origPut
 		createSecretFn = origCreateSecret
@@ -86,6 +95,7 @@ func createRequiredInfraDirs(t *testing.T, titvoDir string) {
 	paths := []string{
 		"infra/titvo-security-scan-infra-aws/prod/us-east-1",
 		"infra/titvo-agent-aws/aws",
+		"infra/titvo-agent-aws/aws/ecr",
 		"infra/titvo-auth-setup-aws/aws",
 		"infra/titvo-task-cli-files-aws/aws",
 		"infra/titvo-task-trigger-aws/aws",
@@ -166,7 +176,7 @@ func TestDeployInfraSuccess(t *testing.T) {
 				mcpRanSubmodule = true
 			}
 		}
-		if command == "terragrunt" && options != nil && len(args) > 1 && args[0] == "run-all" && args[1] == "apply" {
+		if isTerragruntCommand(command) && options != nil && len(args) > 1 && args[0] == "run-all" && args[1] == "apply" {
 			terragruntApplyDirs = append(terragruntApplyDirs, options.WorkingDir)
 		}
 		return nil
@@ -213,6 +223,7 @@ func TestDeployInfraSuccess(t *testing.T) {
 
 	mcpECRDir := filepath.Join(titvoDir, "infra", "titvo-mcp-gateway", "aws", "ecr")
 	ecrPublisherDir := filepath.Join(titvoDir, "infra", "titvo-installer-ecr-publisher", "aws")
+	agentECRDir := filepath.Join(titvoDir, "infra", "titvo-agent-aws", "aws", "ecr")
 	agentDir := filepath.Join(titvoDir, "infra", "titvo-agent-aws", "aws")
 	mcpAWSDir := filepath.Join(titvoDir, "infra", "titvo-mcp-gateway", "aws")
 
@@ -233,6 +244,10 @@ func TestDeployInfraSuccess(t *testing.T) {
 	if ecrPublisherIndex == -1 {
 		t.Fatalf("expected installer ecr publisher apply to run")
 	}
+	agentECRIndex := findDirIndex(terragruntApplyDirs, agentECRDir)
+	if agentECRIndex == -1 {
+		t.Fatalf("expected agent ECR apply to run")
+	}
 	agentIndex := findDirIndex(terragruntApplyDirs, agentDir)
 	if agentIndex == -1 {
 		t.Fatalf("expected agent aws apply to run")
@@ -244,11 +259,14 @@ func TestDeployInfraSuccess(t *testing.T) {
 	if mcpECRIndex >= ecrPublisherIndex {
 		t.Fatalf("expected MCP gateway ECR apply before installer ecr publisher apply")
 	}
-	if agentIndex >= mcpECRIndex {
-		t.Fatalf("expected agent aws apply before MCP gateway ECR apply")
+	if agentECRIndex >= mcpECRIndex {
+		t.Fatalf("expected agent ECR apply before MCP gateway ECR apply")
 	}
-	if agentIndex >= ecrPublisherIndex {
-		t.Fatalf("expected agent aws apply before installer ecr publisher apply")
+	if agentECRIndex >= ecrPublisherIndex {
+		t.Fatalf("expected agent ECR apply before installer ecr publisher apply")
+	}
+	if agentIndex <= ecrPublisherIndex {
+		t.Fatalf("expected agent aws apply after installer ecr publisher apply")
 	}
 	if mcpAWSIndex <= ecrPublisherIndex {
 		t.Fatalf("expected MCP gateway aws apply after installer ecr publisher apply")
@@ -346,7 +364,7 @@ func TestRunBuildZeroRepeats(t *testing.T) {
 func TestDeployNodeComponentMissingDir(t *testing.T) {
 	withRuntimeStubs(t)
 	downloadCalled := false
-	err := deployNodeComponent(t.TempDir(), "missing-repo", "comp", func(dir string) error {
+	err := deployNodeComponent(t.TempDir(), "missing-repo", "comp", "terragrunt", func(dir string) error {
 		downloadCalled = true
 		return nil
 	}, map[string]string{}, 0, false)
@@ -360,7 +378,7 @@ func TestDeployNodeComponentMissingDir(t *testing.T) {
 
 func TestDeployNodeComponentDownloadError(t *testing.T) {
 	withRuntimeStubs(t)
-	err := deployNodeComponent(t.TempDir(), "repo", "comp", func(dir string) error {
+	err := deployNodeComponent(t.TempDir(), "repo", "comp", "terragrunt", func(dir string) error {
 		return errors.New("download failed")
 	}, map[string]string{}, 0, false)
 	if err == nil || err.Error() != "failed to download comp: download failed" {
@@ -380,7 +398,7 @@ func TestDeployNodeComponentSubmoduleError(t *testing.T) {
 		}
 		return nil
 	}
-	err := deployNodeComponent(infraDir, "repo", "comp", func(dir string) error { return nil }, map[string]string{}, 1, true)
+	err := deployNodeComponent(infraDir, "repo", "comp", "terragrunt", func(dir string) error { return nil }, map[string]string{}, 1, true)
 	if err == nil || err.Error() != "git submodule update failed: submodule failed" {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -393,12 +411,12 @@ func TestDeployNodeComponentTerragruntError(t *testing.T) {
 		t.Fatal(err)
 	}
 	executeWithOptionsFn = func(command string, options *ExecuteOptions, args ...string) error {
-		if command == "terragrunt" {
+		if isTerragruntCommand(command) {
 			return errors.New("apply failed")
 		}
 		return nil
 	}
-	err := deployNodeComponent(infraDir, "repo", "comp", func(dir string) error { return nil }, map[string]string{}, 0, false)
+	err := deployNodeComponent(infraDir, "repo", "comp", "terragrunt", func(dir string) error { return nil }, map[string]string{}, 0, false)
 	if err == nil || err.Error() != "terragrunt apply comp failed: apply failed" {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -416,7 +434,7 @@ func TestDeployNodeComponentBuildError(t *testing.T) {
 		}
 		return nil
 	}
-	err := deployNodeComponent(infraDir, "repo", "comp", func(dir string) error { return nil }, map[string]string{}, 1, false)
+	err := deployNodeComponent(infraDir, "repo", "comp", "terragrunt", func(dir string) error { return nil }, map[string]string{}, 1, false)
 	if err == nil || err.Error() != "npm ci failed: ci failed" {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -532,7 +550,7 @@ func TestDeployInfraOptionalSCMIntegrations(t *testing.T) {
 				return nil
 			}
 			executeWithOptionsFn = func(command string, options *ExecuteOptions, args ...string) error {
-				if command == "terragrunt" && options != nil && len(args) > 1 && args[0] == "run-all" && args[1] == "apply" {
+				if isTerragruntCommand(command) && options != nil && len(args) > 1 && args[0] == "run-all" && args[1] == "apply" {
 					terragruntApplyDirs = append(terragruntApplyDirs, options.WorkingDir)
 					if strings.Contains(options.WorkingDir, filepath.Join("prod", "us-east-1")) {
 						events = append(events, "base_apply")
@@ -743,7 +761,7 @@ func TestDeployInfraAdditionalErrorPaths(t *testing.T) {
 			prepare: func(t *testing.T, titvoDir string) { createRequiredInfraDirs(t, titvoDir) },
 			mutate: func() {
 				executeWithOptionsFn = func(command string, options *ExecuteOptions, args ...string) error {
-					if command == "terragrunt" && options != nil && strings.Contains(options.WorkingDir, "prod/us-east-1") {
+					if isTerragruntCommand(command) && options != nil && strings.Contains(options.WorkingDir, "prod/us-east-1") {
 						return errors.New("tg fail")
 					}
 					return nil
@@ -771,7 +789,7 @@ func TestDeployInfraAdditionalErrorPaths(t *testing.T) {
 			prepare: func(t *testing.T, titvoDir string) { createRequiredInfraDirs(t, titvoDir) },
 			mutate: func() {
 				executeWithOptionsFn = func(command string, options *ExecuteOptions, args ...string) error {
-					if command == "terragrunt" && options != nil && strings.Contains(options.WorkingDir, "titvo-installer-ecr-publisher/aws") && len(args) > 1 && args[1] == "apply" {
+					if isTerragruntCommand(command) && options != nil && strings.Contains(options.WorkingDir, "titvo-installer-ecr-publisher/aws") && len(args) > 1 && args[1] == "apply" {
 						return errors.New("ecr apply fail")
 					}
 					return nil
@@ -799,7 +817,7 @@ func TestDeployInfraAdditionalErrorPaths(t *testing.T) {
 			prepare: func(t *testing.T, titvoDir string) { createRequiredInfraDirs(t, titvoDir) },
 			mutate: func() {
 				executeWithOptionsFn = func(command string, options *ExecuteOptions, args ...string) error {
-					if command == "terragrunt" && options != nil && strings.Contains(options.WorkingDir, "titvo-installer-ecr-publisher/aws") && len(args) > 1 && args[1] == "destroy" {
+					if isTerragruntCommand(command) && options != nil && strings.Contains(options.WorkingDir, "titvo-installer-ecr-publisher/aws") && len(args) > 1 && args[1] == "destroy" {
 						return errors.New("destroy fail")
 					}
 					return nil
@@ -843,7 +861,7 @@ func TestDeployInfraAdditionalErrorPaths(t *testing.T) {
 			prepare: func(t *testing.T, titvoDir string) { createRequiredInfraDirs(t, titvoDir) },
 			mutate: func() {
 				executeWithOptionsFn = func(command string, options *ExecuteOptions, args ...string) error {
-					if command == "terragrunt" && options != nil && strings.Contains(options.WorkingDir, "titvo-mcp-gateway/aws/ecr") && len(args) > 1 && args[1] == "apply" {
+					if isTerragruntCommand(command) && options != nil && strings.Contains(options.WorkingDir, "titvo-mcp-gateway/aws/ecr") && len(args) > 1 && args[1] == "apply" {
 						return errors.New("mcp ecr apply fail")
 					}
 					return nil
