@@ -209,7 +209,7 @@ func DownloadNode(dir string, version string, osType OS, arch Arch) (string, err
 	if err != nil {
 		return "", err
 	}
-	return nodeDir, os.Remove(tarPath)
+	return path.Join(dir, nodeDir), os.Remove(tarPath)
 }
 
 type InstallToolConfig struct {
