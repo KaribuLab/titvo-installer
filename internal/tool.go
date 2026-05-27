@@ -49,7 +49,32 @@ func NpmBinaryPath(nodeBinDir string, osType OS) string {
 }
 
 func toolBinaryVersion(binaryPath string) (string, error) {
-	output, err := exec.Command(binaryPath, "--version").CombinedOutput()
+	cmd := exec.Command(binaryPath, "--version")
+	// Ensure scripts (e.g. npm with `#!/usr/bin/env node`) can resolve their runtime
+	// by preferring the binary's own directory in PATH during version checks.
+	binDir := path.Dir(binaryPath)
+	pathKey := "PATH="
+	sep := string(os.PathListSeparator)
+	originalPath := os.Getenv("PATH")
+	newPath := binDir
+	if originalPath != "" {
+		newPath = binDir + sep + originalPath
+	}
+	env := os.Environ()
+	replaced := false
+	for i, kv := range env {
+		if strings.HasPrefix(kv, pathKey) {
+			env[i] = pathKey + newPath
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		env = append(env, pathKey+newPath)
+	}
+	cmd.Env = env
+
+	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("command failed: %v", err)
 	}
@@ -204,7 +229,7 @@ func DownloadNode(dir string, version string, osType OS, arch Arch) (string, err
 	npmPath := NpmBinaryPath(nodeBinDir, osType)
 	err = ExecuteWithOptions(npmPath, &ExecuteOptions{
 		WorkingDir: nodeBinDir,
-		Env:        map[string]string{"PATH": nodeBinDir},
+		Env:        map[string]string{"PATH": pathWithBinDirFirst(nodeBinDir)},
 	}, "--version")
 	if err != nil {
 		return "", err

@@ -68,6 +68,19 @@ func Execute(command string, args ...string) error {
 	return ExecuteWithOptions(command, nil, args...)
 }
 
+// pathWithBinDirFirst prepends binDir to PATH so bundled tools win while system
+// utilities (e.g. sh for npm lifecycle scripts) remain discoverable.
+func pathWithBinDirFirst(binDir string) string {
+	if binDir == "" {
+		return os.Getenv("PATH")
+	}
+	sep := string(os.PathListSeparator)
+	if existing := os.Getenv("PATH"); existing != "" {
+		return binDir + sep + existing
+	}
+	return binDir
+}
+
 func mergeEnv(base []string, overrides map[string]string) []string {
 	merged := make(map[string]string, len(base)+len(overrides))
 	order := make([]string, 0, len(base)+len(overrides))

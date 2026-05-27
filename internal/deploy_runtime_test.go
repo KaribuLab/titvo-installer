@@ -325,13 +325,13 @@ func TestEnsureDirExistsMissing(t *testing.T) {
 func TestRunBuildErrors(t *testing.T) {
 	withRuntimeStubs(t)
 	executeWithOptionsFn = func(command string, options *ExecuteOptions, args ...string) error {
-		if command == "npm" && len(args) > 0 && args[0] == "ci" {
-			return errors.New("ci failed")
+		if command == "npm" && len(args) > 0 && args[0] == "install" {
+			return errors.New("install failed")
 		}
 		return nil
 	}
 	err := runBuild(t.TempDir(), "npm", "/tmp/node/bin", 1)
-	if err == nil || err.Error() != "npm ci failed: ci failed" {
+	if err == nil || err.Error() != "npm install failed: install failed" {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -429,13 +429,13 @@ func TestDeployNodeComponentBuildError(t *testing.T) {
 		t.Fatal(err)
 	}
 	executeWithOptionsFn = func(command string, options *ExecuteOptions, args ...string) error {
-		if command == "npm" && len(args) > 0 && args[0] == "ci" {
-			return errors.New("ci failed")
+		if command == "npm" && len(args) > 0 && args[0] == "install" {
+			return errors.New("install failed")
 		}
 		return nil
 	}
 	err := deployNodeComponent(infraDir, "repo", "comp", "terragrunt", "npm", "/tmp/node/bin", func(dir string) error { return nil }, map[string]string{}, 1, false)
-	if err == nil || err.Error() != "npm ci failed: ci failed" {
+	if err == nil || err.Error() != "npm install failed: install failed" {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
