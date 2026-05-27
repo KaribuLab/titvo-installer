@@ -44,6 +44,63 @@ run() {
 }
 
 # ---------- helpers ----------
+# Rellena un array desde stdin (compatible con Bash 3.2 en macOS; mapfile requiere Bash 4+).
+read_lines_into() {
+  local arr_name=$1
+  local line
+  local -a _lines=()
+  while IFS= read -r line; do
+    [[ -n "$line" ]] && _lines+=("$line")
+  done
+  array_copy "$arr_name" _lines
+}
+
+# Copia un array indexado (evita "${src[@]}" vacío con set -u en Bash 3.2).
+array_copy() {
+  local dest_name=$1 src_name=$2
+  local i len
+  eval "${dest_name}=()"
+  eval "len=\${#${src_name}[@]}"
+  for ((i = 0; i < len; i++)); do
+    eval "${dest_name}+=(\"\${${src_name}[i]}\")"
+  done
+}
+
+# Copia argumentos posicionales a un array indexado.
+array_from_args() {
+  local dest_name=$1
+  shift
+  eval "${dest_name}=()"
+  local arg
+  for arg in "$@"; do
+    eval "${dest_name}+=(\"\$arg\")"
+  done
+}
+
+USED_IAM_ROLES=""
+
+mark_used_iam_role() {
+  local role="$1"
+  [[ -z "$role" ]] && return
+  case $'\n'"$USED_IAM_ROLES"$'\n' in
+    *$'\n'"$role"$'\n'*) return ;;
+  esac
+  if [[ -z "$USED_IAM_ROLES" ]]; then
+    USED_IAM_ROLES="$role"
+  else
+    USED_IAM_ROLES="$USED_IAM_ROLES"$'\n'"$role"
+  fi
+}
+
+iam_role_in_use() {
+  local role="$1"
+  [[ -z "$role" ]] && return 1
+  case $'\n'"$USED_IAM_ROLES"$'\n' in
+    *$'\n'"$role"$'\n'*) return 0 ;;
+  esac
+  return 1
+}
+
 starts_with_prefix() {
   [[ "$1" == "$PREFIX"* ]]
 }
@@ -113,7 +170,6 @@ delete_ssm_parameters_by_path() {
   local next_token=""
   local params
   local -a names=()
-  local -a chunk=()
   local i
 
   while :; do
@@ -123,11 +179,17 @@ delete_ssm_parameters_by_path() {
       params="$(aws ssm get-parameters-by-path --path "$path" --recursive --with-decryption --region "$REGION" --output json)"
     fi
 
-    mapfile -t names < <(echo "$params" | jq -r '.Parameters[]?.Name')
+    read_lines_into names < <(echo "$params" | jq -r '.Parameters[]?.Name')
+    local _quoted _j _end
     for ((i = 0; i < ${#names[@]}; i += 10)); do
-      chunk=("${names[@]:i:10}")
-      [[ "${#chunk[@]}" -eq 0 ]] && continue
-      run "aws ssm delete-parameters --region \"$REGION\" --names $(printf '%q ' "${chunk[@]}")"
+      _quoted=""
+      _end=$((i + 10))
+      ((_end > ${#names[@]})) && _end=${#names[@]}
+      for ((_j = i; _j < _end; _j++)); do
+        _quoted+=" $(printf '%q' "${names[_j]}")"
+      done
+      [[ -z "$_quoted" ]] && continue
+      run "aws ssm delete-parameters --region \"$REGION\" --names$_quoted"
     done
 
     next_token="$(echo "$params" | jq -r '.NextToken // empty')"
@@ -192,8 +254,9 @@ wait_for_cloud_map_operation() {
 
 delete_subnets() {
   local -a subnet_ids=()
+  local subnet_id
 
-  mapfile -t subnet_ids < <(aws ec2 describe-subnets --region "$REGION" --output json \
+  read_lines_into subnet_ids < <(aws ec2 describe-subnets --region "$REGION" --output json \
   | jq -r --arg p "$PREFIX" '.Subnets[]?
       | select(
           (.Tags // []) | any(
@@ -203,7 +266,9 @@ delete_subnets() {
         )
       | .SubnetId')
 
-  for subnet_id in "${subnet_ids[@]}"; do
+  local _i
+  for ((_i = 0; _i < ${#subnet_ids[@]}; _i++)); do
+    subnet_id="${subnet_ids[_i]}"
     [[ -z "$subnet_id" ]] && continue
     run "aws ec2 delete-subnet --subnet-id \"$subnet_id\" --region \"$REGION\""
   done
@@ -219,12 +284,15 @@ wait_for_subnets_deletion() {
   local attempt=1
   local remaining_ids=()
   local subnet_id
+  local _i
 
-  remaining_ids=("$@")
+  array_from_args remaining_ids "$@"
 
   while [[ "$attempt" -le "$max_attempts" && "${#remaining_ids[@]}" -gt 0 ]]; do
     local -a still_remaining=()
-    for subnet_id in "${remaining_ids[@]}"; do
+    local _i
+    for ((_i = 0; _i < ${#remaining_ids[@]}; _i++)); do
+      subnet_id="${remaining_ids[_i]}"
       [[ -z "$subnet_id" ]] && continue
       if aws ec2 describe-subnets --subnet-ids "$subnet_id" --region "$REGION" --output json >/dev/null 2>&1; then
         still_remaining+=("$subnet_id")
@@ -237,11 +305,12 @@ wait_for_subnets_deletion() {
 
     echo "[WAIT] Subnets aun presentes: ${#still_remaining[@]} (intento $attempt/$max_attempts)"
     sleep "$sleep_seconds"
-    remaining_ids=("${still_remaining[@]}")
+    array_copy remaining_ids still_remaining
     attempt=$((attempt + 1))
   done
 
-  for subnet_id in "${remaining_ids[@]}"; do
+  for ((_i = 0; _i < ${#remaining_ids[@]}; _i++)); do
+    subnet_id="${remaining_ids[_i]}"
     [[ -z "$subnet_id" ]] && continue
     run "aws ec2 delete-subnet --subnet-id \"$subnet_id\" --region \"$REGION\""
   done
@@ -298,7 +367,7 @@ delete_vpc_endpoints() {
   local vpce_id
 
   sg_ids_json="$(list_candidate_security_group_ids | jq -R . | jq -s .)"
-  mapfile -t vpce_ids < <(aws ec2 describe-vpc-endpoints --region "$REGION" --output json \
+  read_lines_into vpce_ids < <(aws ec2 describe-vpc-endpoints --region "$REGION" --output json \
   | jq -r --argjson sg_ids "$sg_ids_json" --arg p "$PREFIX" '.VpcEndpoints[]?
       | select(
           any(.Groups[]?.GroupId; $sg_ids | index(.))
@@ -309,7 +378,9 @@ delete_vpc_endpoints() {
         )
       | .VpcEndpointId')
 
-  for vpce_id in "${vpce_ids[@]}"; do
+  local _i
+  for ((_i = 0; _i < ${#vpce_ids[@]}; _i++)); do
+    vpce_id="${vpce_ids[_i]}"
     [[ -z "$vpce_id" ]] && continue
     run "aws ec2 delete-vpc-endpoints --vpc-endpoint-ids \"$vpce_id\" --region \"$REGION\""
   done
@@ -340,16 +411,20 @@ wait_for_vpc_endpoints_deletion() {
 }
 
 wait_for_network_interfaces_deleted() {
-  local -a eni_ids=("$@")
+  local -a eni_ids=()
   local max_attempts=36
   local sleep_seconds=5
   local attempt=1
   local remaining
   local -a still_remaining=()
+  local _i
+
+  array_from_args eni_ids "$@"
 
   while [[ "$attempt" -le "$max_attempts" && "${#eni_ids[@]}" -gt 0 ]]; do
     still_remaining=()
-    for eni_id in "${eni_ids[@]}"; do
+    for ((_i = 0; _i < ${#eni_ids[@]}; _i++)); do
+      eni_id="${eni_ids[_i]}"
       [[ -z "$eni_id" ]] && continue
       if aws ec2 describe-network-interfaces --network-interface-ids "$eni_id" --region "$REGION" --output json 2>/dev/null | jq -e '.NetworkInterfaces[0]' >/dev/null 2>&1; then
         still_remaining+=("$eni_id")
@@ -362,7 +437,7 @@ wait_for_network_interfaces_deleted() {
 
     echo "[WAIT] Network Interfaces aun presentes: ${#still_remaining[@]} (intento $attempt/$max_attempts)"
     sleep "$sleep_seconds"
-    eni_ids=("${still_remaining[@]}")
+    array_copy eni_ids still_remaining
     attempt=$((attempt + 1))
   done
 
@@ -377,12 +452,14 @@ detach_and_delete_enis_for_sg() {
   local attachment_id
   local status
 
-  mapfile -t eni_ids < <(aws ec2 describe-network-interfaces \
+  read_lines_into eni_ids < <(aws ec2 describe-network-interfaces \
     --filters "Name=group-id,Values=$group_id" \
     --region "$REGION" --output json 2>/dev/null \
     | jq -r '.NetworkInterfaces[]?.NetworkInterfaceId')
 
-  for eni_id in "${eni_ids[@]}"; do
+  local _i
+  for ((_i = 0; _i < ${#eni_ids[@]}; _i++)); do
+    eni_id="${eni_ids[_i]}"
     [[ -z "$eni_id" ]] && continue
     status="$(aws ec2 describe-network-interfaces --network-interface-ids "$eni_id" --region "$REGION" --output json 2>/dev/null \
       | jq -r '.NetworkInterfaces[0].Status // empty')"
@@ -544,15 +621,18 @@ delete_security_groups() {
   local -a group_ids=()
   local group_id
 
-  mapfile -t group_ids < <(list_candidate_security_group_ids)
+  read_lines_into group_ids < <(list_candidate_security_group_ids)
 
-  for group_id in "${group_ids[@]}"; do
+  local _i
+  for ((_i = 0; _i < ${#group_ids[@]}; _i++)); do
+    group_id="${group_ids[_i]}"
     [[ -z "$group_id" ]] && continue
     revoke_cross_sg_references "$group_id"
     detach_and_delete_enis_for_sg "$group_id"
   done
 
-  for group_id in "${group_ids[@]}"; do
+  for ((_i = 0; _i < ${#group_ids[@]}; _i++)); do
+    group_id="${group_ids[_i]}"
     [[ -z "$group_id" ]] && continue
     try_delete_security_group "$group_id" || true
   done
@@ -729,8 +809,6 @@ delete_iam_role() {
 # ---------- referencias para evitar borrar recursos en uso ----------
 echo "Recolectando referencias en uso (IAM)..."
 
-declare -A USED_IAM_ROLES=()
-
 # Lambda refs
 while IFS=$'\t' read -r fn ptype imageuri rolearn; do
   if [[ "$ptype" == "Image" && -n "$imageuri" && "$imageuri" != "null" ]]; then
@@ -738,7 +816,7 @@ while IFS=$'\t' read -r fn ptype imageuri rolearn; do
   fi
   if [[ -n "$rolearn" && "$rolearn" != "null" ]]; then
     role="${rolearn##*/}"
-    USED_IAM_ROLES["$role"]=1
+    mark_used_iam_role "$role"
   fi
 done < <(
   aws lambda list-functions --region "$REGION" --output json \
@@ -759,7 +837,7 @@ while read -r td; do
 
   while read -r r; do
     [[ -z "$r" || "$r" == "null" ]] && continue
-    USED_IAM_ROLES["${r##*/}"]=1
+    mark_used_iam_role "${r##*/}"
   done < <(echo "$data" | jq -r '.taskDefinition.taskRoleArn, .taskDefinition.executionRoleArn')
 done <<< "$taskdefs"
 
@@ -777,7 +855,7 @@ while read -r jd; do
 
   while read -r r; do
     [[ -z "$r" || "$r" == "null" ]] && continue
-    USED_IAM_ROLES["${r##*/}"]=1
+    mark_used_iam_role "${r##*/}"
   done < <(echo "$data" | jq -r '.jobDefinitions[]?.containerProperties.jobRoleArn, .jobDefinitions[]?.containerProperties.executionRoleArn')
 done <<< "$jobdefs"
 
@@ -985,7 +1063,9 @@ delete_vpc_endpoints
 
 # 16) Network Interfaces (ENIs - ECS/Batch pueden crear estas)
 echo "Limpiando Network Interfaces..."
-mapfile -t ENI_IDS < <(aws ec2 describe-network-interfaces --region "$REGION" --output json \
+local -a ENI_IDS=()
+local _i eni_id
+read_lines_into ENI_IDS < <(aws ec2 describe-network-interfaces --region "$REGION" --output json \
 | jq -r --arg p "$PREFIX" '.NetworkInterfaces[]?
     | select(.Status == "available")
     | select(
@@ -994,7 +1074,8 @@ mapfile -t ENI_IDS < <(aws ec2 describe-network-interfaces --region "$REGION" --
     )
     | .NetworkInterfaceId')
 
-for eni_id in "${ENI_IDS[@]}"; do
+for ((_i = 0; _i < ${#ENI_IDS[@]}; _i++)); do
+  eni_id="${ENI_IDS[_i]}"
   [[ -z "$eni_id" ]] && continue
   run "aws ec2 delete-network-interface --network-interface-id \"$eni_id\" --region \"$REGION\""
 done
@@ -1023,7 +1104,7 @@ aws iam list-roles --output json | jq -r --arg p "$PREFIX" '.Roles[]?
   | select((.RoleName | ascii_downcase | startswith($p)) or (.RoleName | ascii_downcase | contains("tvo")))
   | .RoleName' \
 | while read -r r; do
-  [[ -n "${USED_IAM_ROLES[$r]:-}" ]] && echo "[SKIP] IAM role en uso: $r" && continue
+  iam_role_in_use "$r" && echo "[SKIP] IAM role en uso: $r" && continue
   if [[ "$APPLY" -eq 1 ]]; then
     delete_iam_role "$r"
   else
