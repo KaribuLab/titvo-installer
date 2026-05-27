@@ -101,6 +101,41 @@ iam_role_in_use() {
   return 1
 }
 
+SKIPPED_ITEMS=""
+
+record_skip() {
+  local reason="$1"
+  local resource="$2"
+  local entry="[$PREFIX] $reason: $resource"
+  [[ -z "$resource" ]] && return
+  case $'\n'"$SKIPPED_ITEMS"$'\n' in
+    *$'\n'"$entry"$'\n'*) return ;;
+  esac
+  if [[ -z "$SKIPPED_ITEMS" ]]; then
+    SKIPPED_ITEMS="$entry"
+  else
+    SKIPPED_ITEMS="$SKIPPED_ITEMS"$'\n'"$entry"
+  fi
+}
+
+print_skipped_summary() {
+  [[ "$APPLY" -ne 1 ]] && return
+  echo ""
+  if [[ -z "$SKIPPED_ITEMS" ]]; then
+    echo "== Recursos omitidos (skipped): ninguno =="
+    return
+  fi
+  local count=0
+  local line
+  echo "== Recursos omitidos (skipped) =="
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    echo "  - $line"
+    count=$((count + 1))
+  done <<< "$SKIPPED_ITEMS"
+  echo "Total omitidos: $count"
+}
+
 starts_with_prefix() {
   [[ "$1" == "$PREFIX"* ]]
 }
@@ -1104,7 +1139,11 @@ aws iam list-roles --output json | jq -r --arg p "$PREFIX" '.Roles[]?
   | select((.RoleName | ascii_downcase | startswith($p)) or (.RoleName | ascii_downcase | contains("tvo")))
   | .RoleName' \
 | while read -r r; do
-  iam_role_in_use "$r" && echo "[SKIP] IAM role en uso: $r" && continue
+  if iam_role_in_use "$r"; then
+    record_skip "IAM role (en uso)" "$r"
+    echo "[SKIP] IAM role en uso: $r"
+    continue
+  fi
   if [[ "$APPLY" -eq 1 ]]; then
     delete_iam_role "$r"
   else
@@ -1145,4 +1184,5 @@ else
 fi
 
 echo "== Limpieza completada =="
+print_skipped_summary
 echo "Tip: primero ejecuta sin --apply; luego con --apply"
