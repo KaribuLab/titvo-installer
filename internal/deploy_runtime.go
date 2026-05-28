@@ -287,6 +287,19 @@ func deployInfra(config DeployConfig) error {
 		return err
 	}
 
+	if err := DownloadRagIndexerSource(infraDir); err != nil {
+		return fmt.Errorf("failed to download rag indexer: %w", err)
+	}
+	ragIndexerSourceDir := path.Join(infraDir, "titvo-rag-indexer")
+	if err := ensureDirExists(ragIndexerSourceDir, "rag indexer directory %s does not exist"); err != nil {
+		return err
+	}
+	ragIndexerECRDir := path.Join(ragIndexerSourceDir, "aws", "ecr")
+	printInfo(fmt.Sprintf("Deploying rag indexer ECR to %s", ragIndexerECRDir))
+	if err := applyTerragruntInDir(ragIndexerECRDir, "rag indexer ECR", terragruntPath, env); err != nil {
+		return err
+	}
+
 	if err := DownloadInstallerECRPublisherSource(infraDir); err != nil {
 		return fmt.Errorf("failed to download installer ecr publisher: %w", err)
 	}
@@ -351,6 +364,10 @@ func deployInfra(config DeployConfig) error {
 		if err := deployNodeComponent(infraDir, component.repoDirName, component.label, terragruntPath, npmPath, nodeBinDir, component.downloadFn, env, component.buildRepeat, component.needsSubmodule); err != nil {
 			return err
 		}
+	}
+
+	if err := deployTerraformComponentFromSource(ragIndexerSourceDir, "rag indexer", terragruntPath, env); err != nil {
+		return err
 	}
 
 	if err := deployTerraformComponentFromSource(agentSourceDir, "agent aws", terragruntPath, env); err != nil {

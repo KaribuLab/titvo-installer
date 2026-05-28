@@ -12,6 +12,7 @@ const titvoGitCommitFilesAWS = "https://github.com/KaribuLab/titvo-git-commit-fi
 const titvoGithubIssueAWS = "https://github.com/KaribuLab/titvo-github-issue-aws.git"
 const titvoIssueReportAWS = "https://github.com/KaribuLab/titvo-issue-report-aws.git"
 const titvoInstallerECRPublisherSource = "https://github.com/KaribuLab/titvo-installer-ecr-publisher.git"
+const titvoRagIndexerSource = "https://github.com/KaribuLab/titvo-rag-indexer.git"
 
 type batchJobSpec struct {
 	Name    string
@@ -36,6 +37,14 @@ func installerECRPublisherJobs(region string) []batchJobSpec {
 			EnvVars: map[string]string{
 				"GIT_URL":    titvoMCPGateway,
 				"IMAGE_REPO": "tvo-mcp-gateway-ecr-prod",
+				"REGION":     region,
+			},
+		},
+		{
+			Name: "installer-ecr-publisher-rag-indexer",
+			EnvVars: map[string]string{
+				"GIT_URL":    titvoRagIndexerSource,
+				"IMAGE_REPO": "tvo-rag-indexer-ecr-prod",
 				"REGION":     region,
 			},
 		},
@@ -88,6 +97,10 @@ func DownloadTaskStatusSource(dir string) error {
 
 func DownloadInstallerECRPublisherSource(dir string) error {
 	return downloadSourceFn(dir, titvoInstallerECRPublisherSource, "installer ecr publisher")
+}
+
+func DownloadRagIndexerSource(dir string) error {
+	return downloadSourceFn(dir, titvoRagIndexerSource, "rag indexer")
 }
 
 type DeployConfig struct {
