@@ -46,13 +46,23 @@ confirm() {
     [[ "$response" =~ ^[Yy]$ ]]
 }
 
+# Rellena un array desde stdin (compatible con Bash 3.2 en macOS; mapfile requiere Bash 4+).
+read_lines_into() {
+    local arr_name=$1
+    local line
+    eval "${arr_name}=()"
+    while IFS= read -r line; do
+        [ -n "$line" ] && eval "${arr_name}+=(\"\$line\")"
+    done
+}
+
 disable_tvo_ecs_clusters() {
     log_info "Paso 2.5/5: Deshabilitando clusters ECS con prefijo 'tvo'"
 
     local clusters_response
     clusters_response=$(aws ecs list-clusters --region "$AWS_REGION" --output json 2>/dev/null || echo '{"clusterArns":[]}')
 
-    mapfile -t CLUSTERS < <(echo "$clusters_response" | jq -r '.clusterArns[]?')
+    read_lines_into CLUSTERS < <(echo "$clusters_response" | jq -r '.clusterArns[]?')
     if [ "${#CLUSTERS[@]}" -eq 0 ]; then
         log_info "No se encontraron clusters ECS"
         echo ""
@@ -69,7 +79,7 @@ disable_tvo_ecs_clusters() {
         found_tvo=true
         log_info "Procesando cluster ECS: $cluster_name"
 
-        mapfile -t SERVICES < <(aws ecs list-services \
+        read_lines_into SERVICES < <(aws ecs list-services \
             --cluster "$cluster_arn" \
             --region "$AWS_REGION" \
             --query 'serviceArns[]' \
@@ -105,7 +115,7 @@ disable_tvo_ecs_clusters() {
             }
         done
 
-        mapfile -t TASKS < <(aws ecs list-tasks \
+        read_lines_into TASKS < <(aws ecs list-tasks \
             --cluster "$cluster_arn" \
             --region "$AWS_REGION" \
             --query 'taskArns[]' \
@@ -156,7 +166,7 @@ delete_cloudmap_namespace_services() {
         return
     fi
 
-    mapfile -t SD_SERVICE_IDS < <(aws servicediscovery list-services \
+    read_lines_into SD_SERVICE_IDS < <(aws servicediscovery list-services \
         --region "$AWS_REGION" \
         --filters "Name=NAMESPACE_ID,Values=$namespace_id,Condition=EQ" \
         --query 'Services[].Id' \
@@ -449,7 +459,7 @@ while true; do
 
     PARAM_NAMES=$(echo "$SSM_RESPONSE" | jq -r '.Parameters[].Name // empty')
     if [ -n "$PARAM_NAMES" ]; then
-        mapfile -t PARAM_ARRAY <<< "$PARAM_NAMES"
+        read_lines_into PARAM_ARRAY <<< "$PARAM_NAMES"
         if aws ssm delete-parameters --region "$AWS_REGION" --names "${PARAM_ARRAY[@]}" > /dev/null 2>&1; then
             DELETED_PARAMS=$((DELETED_PARAMS + ${#PARAM_ARRAY[@]}))
         else

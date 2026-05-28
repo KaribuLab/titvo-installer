@@ -2,8 +2,22 @@ package internal
 
 import (
 	"os"
+	"strings"
 	"testing"
 )
+
+func TestPathWithBinDirFirst(t *testing.T) {
+	t.Setenv("PATH", "/usr/bin:/bin")
+	got := pathWithBinDirFirst("/custom/node/bin")
+	sep := string(os.PathListSeparator)
+	want := "/custom/node/bin" + sep + "/usr/bin:/bin"
+	if got != want {
+		t.Fatalf("pathWithBinDirFirst() = %q, want %q", got, want)
+	}
+	if !strings.HasPrefix(pathWithBinDirFirst("/only"), "/only") {
+		t.Fatal("expected bin dir first when PATH is empty")
+	}
+}
 
 func TestMergeEnvOverridesExistingKeys(t *testing.T) {
 	base := []string{"PATH=/usr/bin", "HOME=/tmp/home"}

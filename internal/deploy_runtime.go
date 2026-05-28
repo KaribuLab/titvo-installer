@@ -44,10 +44,11 @@ func runTerragrunt(dir, terragruntPath string, env map[string]string, action str
 func runBuild(sourceDir, npmPath, nodeBinDir string, repeats int) error {
 	for range repeats {
 		printInfo("Executing build with npm")
-		if err := executeWithOptionsFn(npmPath, &ExecuteOptions{WorkingDir: sourceDir, Env: map[string]string{"PATH": nodeBinDir}}, "ci"); err != nil {
-			return fmt.Errorf("npm ci failed: %w", err)
+		npmEnv := map[string]string{"PATH": pathWithBinDirFirst(nodeBinDir)}
+		if err := executeWithOptionsFn(npmPath, &ExecuteOptions{WorkingDir: sourceDir, Env: npmEnv}, "install"); err != nil {
+			return fmt.Errorf("npm install failed: %w", err)
 		}
-		if err := executeWithOptionsFn(npmPath, &ExecuteOptions{WorkingDir: sourceDir, Env: map[string]string{"PATH": nodeBinDir}}, "run", "build"); err != nil {
+		if err := executeWithOptionsFn(npmPath, &ExecuteOptions{WorkingDir: sourceDir, Env: npmEnv}, "run", "build"); err != nil {
 			return fmt.Errorf("npm run build failed: %w", err)
 		}
 	}

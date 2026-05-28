@@ -52,3 +52,36 @@ func TestLogConfiguredToolBinariesMissingBinary(t *testing.T) {
 		t.Fatal("expected error for missing binaries")
 	}
 }
+
+func TestToolBinaryVersion_ShebangEnvResolvesFromBinaryDirPATH(t *testing.T) {
+	dir := t.TempDir()
+	nodeBinDir := filepath.Join(dir, "node", "bin")
+	if err := os.MkdirAll(nodeBinDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Simulate npm's typical shebang: `#!/usr/bin/env node`
+	// and make sure `node` is only resolvable if the binary dir is in PATH.
+	t.Setenv("PATH", "/usr/bin")
+
+	nodePath := filepath.Join(nodeBinDir, "node")
+	npmPath := filepath.Join(nodeBinDir, "npm")
+
+	nodeStub := "#!/bin/sh\necho \"fake-node v1.2.3\"\n"
+	if err := os.WriteFile(nodePath, []byte(nodeStub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	npmShebang := "#!/usr/bin/env node\nconsole.log('this is never parsed');\n"
+	if err := os.WriteFile(npmPath, []byte(npmShebang), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := toolBinaryVersion(npmPath)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if got != "fake-node v1.2.3" {
+		t.Fatalf("version = %q, want %q", got, "fake-node v1.2.3")
+	}
+}
