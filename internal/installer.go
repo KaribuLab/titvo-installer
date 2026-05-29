@@ -36,6 +36,9 @@ func RunInstaller(cmd *cobra.Command, args []string) {
 		if len(setupConfigFile.AesSecret) != 32 {
 			printErrorAndExit(fmt.Errorf("AES Secret in config file must have 32 characters in length"))
 		}
+		if setupConfigFile.EmbeddingModel == "" {
+			printErrorAndExit(fmt.Errorf("embedding_model is required in config file"))
+		}
 		setup = &SetupConfig{
 			AWSCredentialsLookup: &SetupConfigFileLookup{
 				SetupConfigFile: setupConfigFile,
@@ -49,6 +52,9 @@ func RunInstaller(cmd *cobra.Command, args []string) {
 			AIProvider:        setupConfigFile.AIProvider,
 			AIModel:           setupConfigFile.AIModel,
 			AIApiKey:          setupConfigFile.AIApiKey,
+			EmbeddingProvider: setupConfigFile.EmbeddingProvider,
+			EmbeddingModel:    setupConfigFile.EmbeddingModel,
+			EmbeddingApiKey:   setupConfigFile.EmbeddingApiKey,
 			BitbucketAPIToken: setupConfigFile.BitbucketAPIToken,
 			GithubAccessToken: setupConfigFile.GithubAccessToken,
 		}
@@ -85,13 +91,16 @@ func RunInstaller(cmd *cobra.Command, args []string) {
 	}
 	printInfo("Infra deployed successfully")
 	startConfig := StartConfig{
-		AWSCredentials: awsCredentials,
-		UserName:       setup.UserName,
-		AIProvider:     setup.AIProvider,
-		AIModel:        setup.AIModel,
-		AIApiKey:       setup.AIApiKey,
-		AESSecret:      setup.AesSecret,
-		TitvoDir:       tool.TitvoDir,
+		AWSCredentials:    awsCredentials,
+		UserName:          setup.UserName,
+		AIProvider:        setup.AIProvider,
+		AIModel:           setup.AIModel,
+		AIApiKey:          setup.AIApiKey,
+		EmbeddingProvider: setup.EmbeddingProvider,
+		EmbeddingModel:    setup.EmbeddingModel,
+		EmbeddingApiKey:   setup.EmbeddingApiKey,
+		AESSecret:         setup.AesSecret,
+		TitvoDir:          tool.TitvoDir,
 	}
 	err = StartConfiguration(&startConfig)
 	if err != nil {

@@ -69,6 +69,25 @@ func askForCredentialsFile(awsRegion string) (*SetupConfig, error) {
 	if err != nil {
 		printErrorAndExit(err)
 	}
+	embeddingProvider, err := askForEmbeddingProvider()
+	if err != nil {
+		printErrorAndExit(err)
+	}
+	embeddingModel, err := askForInput("Enter your Embedding Model", "Embedding Model")
+	if err != nil {
+		printErrorAndExit(err)
+	}
+	embeddingApiKey := ""
+	configureEmbeddingApiKey, err := askForYesNo("Do you want to use a different API Key for Embeddings? (y/N)")
+	if err != nil {
+		printErrorAndExit(err)
+	}
+	if configureEmbeddingApiKey {
+		embeddingApiKey, err = askForPassword("Enter your Embedding API Key", "Embedding API Key")
+		if err != nil {
+			printErrorAndExit(err)
+		}
+	}
 
 	bitbucketAPIToken := ""
 	configureBitbucket, err := askForYesNo("Do you want to configure Bitbucket credentials? (y/N)")
@@ -112,6 +131,9 @@ func askForCredentialsFile(awsRegion string) (*SetupConfig, error) {
 		AIProvider:        aiProvider,
 		AIModel:           aiModel,
 		AIApiKey:          string(aiApiKey),
+		EmbeddingProvider: embeddingProvider,
+		EmbeddingModel:    embeddingModel,
+		EmbeddingApiKey:   string(embeddingApiKey),
 		BitbucketAPIToken: string(bitbucketAPIToken),
 		GithubAccessToken: string(githubAccessToken),
 	}, nil

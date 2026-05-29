@@ -5,34 +5,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"os"
-	"path"
 	"strings"
 
 	"github.com/google/uuid"
 )
 
-const promptFileUrl = "https://raw.githubusercontent.com/KaribuLab/titvo-installer/main/system_prompt.md"
-const contentTemplateFileUrl = "https://raw.githubusercontent.com/KaribuLab/titvo-installer/main/content_template.md"
 const apiKeyCharset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-
-func downloadPromptFile(dir string) (string, error) {
-	url := promptFileUrl
-	err := downloadFile(url, dir, "system_prompt.md")
-	if err != nil {
-		return "", err
-	}
-	return path.Join(dir, "system_prompt.md"), nil
-}
-
-func downloadContentTemplateFile(dir string) (string, error) {
-	url := contentTemplateFileUrl
-	err := downloadFile(url, dir, "content_template.md")
-	if err != nil {
-		return "", err
-	}
-	return path.Join(dir, "content_template.md"), nil
-}
 
 // hashSha256 hashes data using SHA-256
 func hashSha256(data []byte) string {
@@ -76,13 +54,16 @@ func generateAPIKey() string {
 }
 
 type StartConfig struct {
-	AWSCredentials *AWSCredentials
-	UserName       string
-	AIProvider     string
-	AIModel        string
-	AIApiKey       string
-	AESSecret      string
-	TitvoDir       string
+	AWSCredentials    *AWSCredentials
+	UserName          string
+	AIProvider        string
+	AIModel           string
+	AIApiKey          string
+	EmbeddingProvider string
+	EmbeddingModel    string
+	EmbeddingApiKey   string
+	AESSecret         string
+	TitvoDir          string
 }
 
 // StartConfiguration starts the configuration
@@ -159,22 +140,6 @@ func StartConfiguration(config *StartConfig) error {
 	if err != nil {
 		return err
 	}
-	promptFilePath, err := downloadPromptFile(config.TitvoDir)
-	if err != nil {
-		return err
-	}
-	// Read prompt file
-	promptFile, err := os.ReadFile(promptFilePath)
-	if err != nil {
-		return err
-	}
-	err = PutRecord(config.AWSCredentials, dynamoConfigurationTableName, map[string]interface{}{
-		"parameter_id": "scan_system_prompt",
-		"value":        string(promptFile),
-	})
-	if err != nil {
-		return err
-	}
 	securityScanJobQueueName, err := GetParameter(config.AWSCredentials, "/tvo/security-scan/prod/infra/batch/agent/job_queue_name")
 	if err != nil {
 		return err
@@ -182,22 +147,6 @@ func StartConfiguration(config *StartConfig) error {
 	err = PutRecord(config.AWSCredentials, dynamoConfigurationTableName, map[string]interface{}{
 		"parameter_id": "security-scan-job-queue",
 		"value":        securityScanJobQueueName,
-	})
-	if err != nil {
-		return err
-	}
-	// Read content template file
-	contentTemplateFilePath, err := downloadContentTemplateFile(config.TitvoDir)
-	if err != nil {
-		return err
-	}
-	contentTemplateFile, err := os.ReadFile(contentTemplateFilePath)
-	if err != nil {
-		return err
-	}
-	err = PutRecord(config.AWSCredentials, dynamoConfigurationTableName, map[string]interface{}{
-		"parameter_id": "content_template",
-		"value":        string(contentTemplateFile),
 	})
 	if err != nil {
 		return err
@@ -231,6 +180,59 @@ func StartConfiguration(config *StartConfig) error {
 	if err != nil {
 		return err
 	}
+
+	// RAG index bucket from SSM
+	ragIndexBucketName, err := GetParameter(config.AWSCredentials, "/tvo/security-scan/prod/infra/s3/rag-index/bucket_name")
+	if err != nil {
+		return err
+	}
+	err = PutRecord(config.AWSCredentials, dynamoConfigurationTableName, map[string]interface{}{
+		"parameter_id": "rag_index_bucket",
+		"value":        ragIndexBucketName,
+	})
+	if err != nil {
+		return err
+	}
+
+	// embedding_provider: use config value or fall back to ai_provider
+	embeddingProvider := config.EmbeddingProvider
+	if embeddingProvider == "" {
+		embeddingProvider = config.AIProvider
+	}
+	err = PutRecord(config.AWSCredentials, dynamoConfigurationTableName, map[string]interface{}{
+		"parameter_id": "embedding_provider",
+		"value":        embeddingProvider,
+	})
+	if err != nil {
+		return err
+	}
+
+	// embedding_model (required, plain text)
+	err = PutRecord(config.AWSCredentials, dynamoConfigurationTableName, map[string]interface{}{
+		"parameter_id": "embedding_model",
+		"value":        config.EmbeddingModel,
+	})
+	if err != nil {
+		return err
+	}
+
+	// embedding_api_key: use config value or fall back to ai_api_key
+	embeddingRawApiKey := config.EmbeddingApiKey
+	if embeddingRawApiKey == "" {
+		embeddingRawApiKey = config.AIApiKey
+	}
+	embeddingApiKey, err := encrypt(embeddingRawApiKey, config.AESSecret)
+	if err != nil {
+		return err
+	}
+	err = PutRecord(config.AWSCredentials, dynamoConfigurationTableName, map[string]interface{}{
+		"parameter_id": "embedding_api_key",
+		"value":        embeddingApiKey,
+	})
+	if err != nil {
+		return err
+	}
+
 	setupEndpoint, err := GetParameter(config.AWSCredentials, "/tvo/security-scan/prod/infra/apigateway/task/api_gateway_api_full_endpoint")
 	if err != nil {
 		return err

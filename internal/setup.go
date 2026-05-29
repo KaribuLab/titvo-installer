@@ -78,6 +78,9 @@ type SetupConfigFile struct {
 	AIProvider         string `json:"ai_provider"`
 	AIModel            string `json:"ai_model"`
 	AIApiKey           string `json:"ai_api_key"`
+	EmbeddingProvider  string `json:"embedding_provider"`
+	EmbeddingModel     string `json:"embedding_model"`
+	EmbeddingApiKey    string `json:"embedding_api_key"`
 	BitbucketAPIToken  string `json:"bitbucket_api_token"`
 	GithubAccessToken  string `json:"github_access_token"`
 }
@@ -106,6 +109,9 @@ type SetupConfig struct {
 	AIProvider           string
 	AIModel              string
 	AIApiKey             string
+	EmbeddingProvider    string
+	EmbeddingModel       string
+	EmbeddingApiKey      string
 	BitbucketAPIToken    string
 	GithubAccessToken    string
 }
@@ -123,6 +129,9 @@ func askForPromptInput(awsRegion string) (*SetupConfig, error) {
 	var aiProvider string
 	var aiModel string
 	var aiApiKey string
+	var embeddingProvider string
+	var embeddingModel string
+	var embeddingApiKey string
 	var bitbucketAPIToken string
 	var githubAccessToken string
 	var err error
@@ -178,6 +187,24 @@ func askForPromptInput(awsRegion string) (*SetupConfig, error) {
 	if err != nil {
 		printErrorAndExit(err)
 	}
+	embeddingProvider, err = askForEmbeddingProvider()
+	if err != nil {
+		printErrorAndExit(err)
+	}
+	embeddingModel, err = askForInput("Enter your Embedding Model", "Embedding Model")
+	if err != nil {
+		printErrorAndExit(err)
+	}
+	configureEmbeddingApiKey, err := askForYesNo("Do you want to use a different API Key for Embeddings? (y/N)")
+	if err != nil {
+		printErrorAndExit(err)
+	}
+	if configureEmbeddingApiKey {
+		embeddingApiKey, err = askForPassword("Enter your Embedding API Key", "Embedding API Key")
+		if err != nil {
+			printErrorAndExit(err)
+		}
+	}
 	configureBitbucket, err := askForYesNo("Do you want to configure Bitbucket credentials? (y/N)")
 	if err != nil {
 		printErrorAndExit(err)
@@ -222,6 +249,9 @@ func askForPromptInput(awsRegion string) (*SetupConfig, error) {
 		AIProvider:        aiProvider,
 		AIModel:           aiModel,
 		AIApiKey:          string(aiApiKey),
+		EmbeddingProvider: embeddingProvider,
+		EmbeddingModel:    embeddingModel,
+		EmbeddingApiKey:   string(embeddingApiKey),
 		BitbucketAPIToken: string(bitbucketAPIToken),
 		GithubAccessToken: string(githubAccessToken),
 	}, nil
@@ -234,6 +264,24 @@ func askForAIProvider() (string, error) {
 		{Label: "Google", Value: "google", Callback: func() (any, error) { return "google", nil }},
 	}
 	result, err := askForChoices("Select AI Provider", choices)
+	if err != nil {
+		return "", err
+	}
+	provider, ok := result.(string)
+	if !ok {
+		return "", fmt.Errorf("unexpected type returned from askForChoices")
+	}
+	return provider, nil
+}
+
+func askForEmbeddingProvider() (string, error) {
+	choices := []choice{
+		{Label: "Same as AI provider", Value: "", Callback: func() (any, error) { return "", nil }},
+		{Label: "Anthropic", Value: "anthropic", Callback: func() (any, error) { return "anthropic", nil }},
+		{Label: "OpenAI", Value: "openai", Callback: func() (any, error) { return "openai", nil }},
+		{Label: "Google", Value: "google", Callback: func() (any, error) { return "google", nil }},
+	}
+	result, err := askForChoices("Select Embedding Provider", choices)
 	if err != nil {
 		return "", err
 	}
