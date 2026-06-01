@@ -86,8 +86,8 @@ func TestDownloadInfraSourcePropagatesError(t *testing.T) {
 func TestInstallerECRPublisherJobs(t *testing.T) {
 	jobs := installerECRPublisherJobs("us-east-1")
 
-	if len(jobs) != 2 {
-		t.Fatalf("expected 2 jobs, got %d", len(jobs))
+	if len(jobs) != 3 {
+		t.Fatalf("expected 3 jobs, got %d", len(jobs))
 	}
 
 	if jobs[0].Name != "installer-ecr-publisher-agent" {
@@ -114,6 +114,19 @@ func TestInstallerECRPublisherJobs(t *testing.T) {
 	}
 	if jobs[1].EnvVars["REGION"] != "us-east-1" {
 		t.Fatalf("unexpected second job region: %s", jobs[1].EnvVars["REGION"])
+	}
+
+	if jobs[2].Name != "installer-ecr-publisher-rag-indexer" {
+		t.Fatalf("unexpected third job name: %s", jobs[2].Name)
+	}
+	if jobs[2].EnvVars["GIT_URL"] != titvoRagIndexerSource {
+		t.Fatalf("unexpected third job git url: %s", jobs[2].EnvVars["GIT_URL"])
+	}
+	if jobs[2].EnvVars["IMAGE_REPO"] != "tvo-rag-indexer-ecr-prod" {
+		t.Fatalf("unexpected third job image repo: %s", jobs[2].EnvVars["IMAGE_REPO"])
+	}
+	if jobs[2].EnvVars["REGION"] != "us-east-1" {
+		t.Fatalf("unexpected third job region: %s", jobs[2].EnvVars["REGION"])
 	}
 }
 

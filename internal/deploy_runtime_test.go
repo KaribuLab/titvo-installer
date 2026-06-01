@@ -103,6 +103,8 @@ func createRequiredInfraDirs(t *testing.T, titvoDir string) {
 		"infra/titvo-installer-ecr-publisher/aws",
 		"infra/titvo-mcp-gateway/aws",
 		"infra/titvo-mcp-gateway/aws/ecr",
+		"infra/titvo-rag-indexer/aws",
+		"infra/titvo-rag-indexer/aws/ecr",
 		"infra/titvo-bitbucket-code-insights-aws/aws",
 		"infra/titvo-git-commit-files-aws/aws",
 		"infra/titvo-github-issue-aws/aws",
@@ -217,8 +219,8 @@ func TestDeployInfraSuccess(t *testing.T) {
 	if privateSubnets[0].NatGatewayID != config.NatGatewayID {
 		t.Fatalf("unexpected nat gateway id: %s", privateSubnets[0].NatGatewayID)
 	}
-	if jobsSubmitted != 2 {
-		t.Fatalf("expected 2 jobs submitted, got %d", jobsSubmitted)
+	if jobsSubmitted != 3 {
+		t.Fatalf("expected 3 jobs submitted, got %d", jobsSubmitted)
 	}
 
 	mcpECRDir := filepath.Join(titvoDir, "infra", "titvo-mcp-gateway", "aws", "ecr")

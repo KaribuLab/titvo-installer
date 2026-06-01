@@ -117,6 +117,10 @@ func askForCredentialsFile(awsRegion string) (*SetupConfig, error) {
 		printAskQuestion("Warning: GitHub access token was not provided. GitHub integration deployment will be skipped.")
 	}
 
+	if bitbucketAPIToken == "" && githubAccessToken == "" {
+		printErrorAndExit(fmt.Errorf("at least one of Bitbucket API Token or GitHub Access Token is required"))
+	}
+
 	return &SetupConfig{
 		AWSCredentialsLookup: &AWSFileCredentials{
 			Profile: profile,

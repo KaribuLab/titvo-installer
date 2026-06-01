@@ -39,6 +39,9 @@ func RunInstaller(cmd *cobra.Command, args []string) {
 		if setupConfigFile.EmbeddingModel == "" {
 			printErrorAndExit(fmt.Errorf("embedding_model is required in config file"))
 		}
+		if setupConfigFile.BitbucketAPIToken == "" && setupConfigFile.GithubAccessToken == "" {
+			printErrorAndExit(fmt.Errorf("at least one of bitbucket_api_token or github_access_token is required in config file"))
+		}
 		setup = &SetupConfig{
 			AWSCredentialsLookup: &SetupConfigFileLookup{
 				SetupConfigFile: setupConfigFile,

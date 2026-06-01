@@ -244,11 +244,5 @@ func StartConfiguration(config *StartConfig) error {
 	printInfo("----------------------------------------------------------------")
 	printInfo("* Remember to keep your API Key and User ID in a safe place")
 	printInfo("----------------------------------------------------------------")
-	printInfo("Now download the Titvo CLI from the following link:")
-	printInfo("https://github.com/KaribuLab/tli/releases")
-	printInfo("----------------------------------------------------------------")
-	printInfo("And run the following command to setup the Titvo CLI:")
-	printInfo("tli setup")
-	printInfo("----------------------------------------------------------------")
 	return nil
 }
