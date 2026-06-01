@@ -183,6 +183,47 @@ Ambos comandos te pedirán las credenciales de AWS (o puedes pasarlas con `--con
 
 ---
 
+## Repositorios de Titvo utilizados
+
+Durante la instalación, el instalador clona y despliega varios repositorios de la organización [KaribuLab](https://github.com/KaribuLab). A continuación se listan todos los componentes que se despliegan:
+
+### Infraestructura base
+
+| Repositorio | Descripción |
+|-------------|-------------|
+| [titvo-security-scan-infra-aws](https://github.com/KaribuLab/titvo-security-scan-infra-aws) | Infraestructura base de Titvo en AWS (red privada, recursos compartidos, parámetros y secretos). Es lo primero que se despliega. |
+| [titvo-installer-ecr-publisher](https://github.com/KaribuLab/titvo-installer-ecr-publisher) | Componente temporal que publica las imágenes de contenedor en ECR mediante jobs de AWS Batch. Se despliega, ejecuta los jobs y luego se destruye. |
+
+### Servicios principales (contenedores)
+
+| Repositorio | Descripción |
+|-------------|-------------|
+| [titvo-agent-aws](https://github.com/KaribuLab/titvo-agent-aws) | Agente que ejecuta el análisis de seguridad del código. Incluye su repositorio ECR y la infraestructura para correr el contenedor. |
+| [titvo-mcp-gateway](https://github.com/KaribuLab/titvo-mcp-gateway) | Gateway MCP (Model Context Protocol) que expone las herramientas que utiliza el agente. Incluye su imagen ECR e infraestructura. |
+| [titvo-rag-indexer](https://github.com/KaribuLab/titvo-rag-indexer) | Indexador RAG encargado de generar y mantener los embeddings/índices del código. Incluye su imagen ECR e infraestructura. |
+
+### Componentes de tareas y autenticación
+
+| Repositorio | Descripción |
+|-------------|-------------|
+| [titvo-auth-setup-aws](https://github.com/KaribuLab/titvo-auth-setup-aws) | Configuración de autenticación de la plataforma. |
+| [titvo-task-trigger-aws](https://github.com/KaribuLab/titvo-task-trigger-aws) | Disparador de tareas: recibe las solicitudes y da inicio a los escaneos. |
+| [titvo-task-status-aws](https://github.com/KaribuLab/titvo-task-status-aws) | Consulta del estado y resultado de las tareas de análisis. |
+| [titvo-task-cli-files-aws](https://github.com/KaribuLab/titvo-task-cli-files-aws) | Manejo de los archivos asociados a las tareas ejecutadas desde la CLI. |
+| [titvo-git-commit-files-aws](https://github.com/KaribuLab/titvo-git-commit-files-aws) | Obtiene los archivos modificados en un commit de Git para su análisis. |
+
+### Componentes de reporte e integraciones
+
+| Repositorio | Descripción |
+|-------------|-------------|
+| [titvo-issue-report-aws](https://github.com/KaribuLab/titvo-issue-report-aws) | Generación de reportes de los hallazgos del análisis. |
+| [titvo-bitbucket-code-insights-aws](https://github.com/KaribuLab/titvo-bitbucket-code-insights-aws) | Integración con Bitbucket Code Insights. Solo se despliega si configuras credenciales de Bitbucket. |
+| [titvo-github-issue-aws](https://github.com/KaribuLab/titvo-github-issue-aws) | Integración con GitHub Issues. Solo se despliega si configuras credenciales de GitHub. |
+
+> Además, el instalador descarga herramientas de terceros (Terraform, Terragrunt y Node.js) que no son repositorios de Titvo.
+
+---
+
 ## Documentación técnica
 
 Si quieres entender en detalle cómo funciona el instalador por dentro (flujo paso a paso, diagramas de secuencia y arquitectura), revisa la carpeta [`docs/`](./docs):
