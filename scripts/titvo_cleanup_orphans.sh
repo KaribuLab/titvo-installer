@@ -287,6 +287,30 @@ wait_for_cloud_map_operation() {
   return 1
 }
 
+detach_and_delete_eni_by_id() {
+  local eni_id="$1"
+  local attachment_id
+  local status
+
+  [[ -z "$eni_id" ]] && return 0
+
+  status="$(aws ec2 describe-network-interfaces --network-interface-ids "$eni_id" --region "$REGION" --output json 2>/dev/null \
+    | jq -r '.NetworkInterfaces[0].Status // empty')"
+  attachment_id="$(aws ec2 describe-network-interfaces --network-interface-ids "$eni_id" --region "$REGION" --output json 2>/dev/null \
+    | jq -r '.NetworkInterfaces[0].Attachment.AttachmentId // empty')"
+
+  if [[ -n "$attachment_id" ]]; then
+    run "aws ec2 detach-network-interface --attachment-id \"$attachment_id\" --force --region \"$REGION\""
+  fi
+
+  if [[ "$status" == "available" || -n "$attachment_id" ]]; then
+    run "aws ec2 delete-network-interface --network-interface-id \"$eni_id\" --region \"$REGION\""
+  else
+    echo "[INFO] ENI $eni_id status=$status (no available, posiblemente gestionado por AWS); se intentara borrar igual"
+    run "aws ec2 delete-network-interface --network-interface-id \"$eni_id\" --region \"$REGION\""
+  fi
+}
+
 delete_subnets() {
   local -a subnet_ids=()
   local subnet_id
@@ -484,8 +508,6 @@ detach_and_delete_enis_for_sg() {
   local group_id="$1"
   local -a eni_ids=()
   local eni_id
-  local attachment_id
-  local status
 
   read_lines_into eni_ids < <(aws ec2 describe-network-interfaces \
     --filters "Name=group-id,Values=$group_id" \
@@ -495,22 +517,7 @@ detach_and_delete_enis_for_sg() {
   local _i
   for ((_i = 0; _i < ${#eni_ids[@]}; _i++)); do
     eni_id="${eni_ids[_i]}"
-    [[ -z "$eni_id" ]] && continue
-    status="$(aws ec2 describe-network-interfaces --network-interface-ids "$eni_id" --region "$REGION" --output json 2>/dev/null \
-      | jq -r '.NetworkInterfaces[0].Status // empty')"
-    attachment_id="$(aws ec2 describe-network-interfaces --network-interface-ids "$eni_id" --region "$REGION" --output json 2>/dev/null \
-      | jq -r '.NetworkInterfaces[0].Attachment.AttachmentId // empty')"
-
-    if [[ -n "$attachment_id" ]]; then
-      run "aws ec2 detach-network-interface --attachment-id \"$attachment_id\" --force --region \"$REGION\""
-    fi
-
-    if [[ "$status" == "available" || -n "$attachment_id" ]]; then
-      run "aws ec2 delete-network-interface --network-interface-id \"$eni_id\" --region \"$REGION\""
-    else
-      echo "[INFO] ENI $eni_id status=$status (no available, posiblemente gestionado por AWS); se intentara borrar igual"
-      run "aws ec2 delete-network-interface --network-interface-id \"$eni_id\" --region \"$REGION\""
-    fi
+    detach_and_delete_eni_by_id "$eni_id"
   done
 
   if [[ "$APPLY" -eq 1 && "${#eni_ids[@]}" -gt 0 ]]; then
