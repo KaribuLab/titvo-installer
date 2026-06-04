@@ -353,32 +353,6 @@ wait_for_subnets_deletion() {
   return 0
 }
 
-delete_route_tables() {
-  local rtb_ids
-
-  rtb_ids="$(aws ec2 describe-route-tables --region "$REGION" --output json \
-    | jq -r --arg p "$PREFIX" '.RouteTables[]?
-        | select(
-            ((.Tags // []) | any(
-              (.Key == "Name" and (.Value | ascii_downcase | startswith($p)))
-              or (.Key == "Project" and (.Value | ascii_downcase | contains($p)))
-            ))
-          )
-        | select(all(.Associations[]?; (.Main // false) | not))
-        | .RouteTableId')"""
-
-  while read -r rtb_id; do
-    [[ -z "$rtb_id" ]] && continue
-    aws ec2 describe-route-tables --route-table-ids "$rtb_id" --region "$REGION" --output json \
-    | jq -r '.RouteTables[]?.Associations[]? | select((.Main // false) | not) | .RouteTableAssociationId' \
-    | while read -r assoc_id; do
-      [[ -z "$assoc_id" ]] && continue
-      run "aws ec2 disassociate-route-table --association-id \"$assoc_id\" --region \"$REGION\""
-    done
-    run "aws ec2 delete-route-table --route-table-id \"$rtb_id\" --region \"$REGION\""
-  done <<< "$rtb_ids"
-}
-
 list_candidate_security_group_ids() {
   aws ec2 describe-security-groups --region "$REGION" --output json \
   | jq -r --arg p "$PREFIX" '.SecurityGroups[]?
@@ -1090,13 +1064,10 @@ aws servicediscovery list-namespaces --region "$REGION" --output json \
   delete_cloud_map_namespace "$namespace_id"
 done
 
-# 14) Route Tables
-delete_route_tables
-
-# 15) VPC Endpoints
+# 14) VPC Endpoints
 delete_vpc_endpoints
 
-# 16) Network Interfaces (ENIs - ECS/Batch pueden crear estas)
+# 15) Network Interfaces (ENIs - ECS/Batch pueden crear estas)
 echo "Limpiando Network Interfaces..."
 local -a ENI_IDS=()
 local _i eni_id
@@ -1119,13 +1090,13 @@ if [[ "$APPLY" -eq 1 && "${#ENI_IDS[@]}" -gt 0 ]]; then
   wait_for_network_interfaces_deleted "${ENI_IDS[@]}" || true
 fi
 
-# 17) Subnets
+# 16) Subnets
 delete_subnets
 
-# 18) Security Groups
+# 17) Security Groups
 delete_security_groups
 
-# 19) CloudWatch Logs
+# 18) CloudWatch Logs
 aws logs describe-log-groups --region "$REGION" --output json \
 | jq -r --arg p "$PREFIX" '.logGroups[]? | select(.logGroupName | contains($p)) | .logGroupName' \
 | while read -r log_group; do
@@ -1133,7 +1104,7 @@ aws logs describe-log-groups --region "$REGION" --output json \
   run "aws logs delete-log-group --log-group-name \"$log_group\" --region \"$REGION\""
 done
 
-# 20) IAM
+# 19) IAM
 echo "IAM candidates (Titvo match):"
 aws iam list-roles --output json | jq -r --arg p "$PREFIX" '.Roles[]?
   | select((.RoleName | ascii_downcase | startswith($p)) or (.RoleName | ascii_downcase | contains("tvo")))
