@@ -233,7 +233,6 @@ echo ""
 
 # Variables del proyecto
 PROJECT_NAME="titvo-security-scan"
-REPO_NAME="${PROJECT_NAME}-ecr-${AWS_STAGE}"
 CLI_FILES_BUCKET_NAME="${PROJECT_NAME}-reports-${AWS_STAGE}"
 INFRA_DIR="$HOME/.titvo/infra"
 if [ -n "$AWS_ACCOUNT_ID" ];
@@ -243,39 +242,97 @@ fi
 # Contador de errores
 ERRORS=0
 
-# ========================================
-# 1. Limpiar ECR Repository
-# ========================================
-log_info "Paso 1/5: Limpiando repositorio ECR"
-if aws ecr describe-repositories \
-    --repository-names "$REPO_NAME" \
-    --region "$AWS_REGION" \
-    --output text > /dev/null 2>&1; then
+is_titvo_ecr_repository() {
+  local repo_name="$1"
+  case "$repo_name" in
+    tvo*|titvo*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
 
-    log_info "Repositorio ECR '$REPO_NAME' encontrado"
+empty_ecr_repository() {
+  local repo_name="$1"
+  local next_token=""
+  local total_deleted=0
+  local response
+  local ids_json
+  local count
+  local i
+  local chunk
+  local chunk_len
+  local tmp_file
+  local list_args
 
-    # Listar imágenes
-    IMAGES=$(aws ecr list-images \
-        --repository-name "$REPO_NAME" \
-        --region "$AWS_REGION" \
-        --query 'imageIds[*]' \
-        --output json 2>/dev/null || echo '[]')
+  log_info "Vaciando repositorio ECR '$repo_name'..."
 
-    IMAGE_COUNT=$(echo "$IMAGES" | jq 'length')
-
-    if [ "$IMAGE_COUNT" -gt 0 ]; then
-        log_info "Eliminando $IMAGE_COUNT imágenes..."
-        echo "$IMAGES" | aws ecr batch-delete-image \
-            --repository-name "$REPO_NAME" \
-            --region "$AWS_REGION" \
-            --image-ids file:///dev/stdin > /dev/null
-        log_success "Imágenes eliminadas de ECR"
-    else
-        log_info "Repositorio ECR ya está vacío"
+  while :; do
+    list_args=(--repository-name "$repo_name" --region "$AWS_REGION" --output json --max-results 1000)
+    if [[ -n "$next_token" ]]; then
+      list_args+=(--next-token "$next_token")
     fi
-else
-    log_warning "Repositorio ECR '$REPO_NAME' no encontrado (puede ya estar eliminado)"
-fi
+
+    response="$(aws ecr list-images "${list_args[@]}" 2>/dev/null || echo '{"imageIds":[]}')"
+    ids_json="$(echo "$response" | jq -c '.imageIds // []')"
+    count="$(echo "$ids_json" | jq 'length')"
+
+    i=0
+    while [[ "$i" -lt "$count" ]]; do
+      chunk="$(echo "$ids_json" | jq -c ".[$i:$i+100]")"
+      chunk_len="$(echo "$chunk" | jq 'length')"
+      [[ "$chunk_len" -eq 0 ]] && break
+
+      tmp_file="$(mktemp)"
+      echo "$chunk" > "$tmp_file"
+      if aws ecr batch-delete-image \
+        --repository-name "$repo_name" \
+        --region "$AWS_REGION" \
+        --image-ids "file://${tmp_file}" > /dev/null 2>&1; then
+        total_deleted=$((total_deleted + chunk_len))
+      else
+        log_warning "No se pudieron eliminar algunas imagenes de '$repo_name'"
+        ERRORS=$((ERRORS + 1))
+      fi
+      rm -f "$tmp_file"
+      i=$((i + 100))
+    done
+
+    next_token="$(echo "$response" | jq -r '.nextToken // empty')"
+    [[ -z "$next_token" ]] && break
+  done
+
+  if [[ "$total_deleted" -gt 0 ]]; then
+    log_success "Eliminadas $total_deleted imagenes de '$repo_name'"
+  else
+    log_info "Repositorio ECR '$repo_name' ya esta vacio"
+  fi
+}
+
+empty_all_titvo_ecr_repositories() {
+  local -a repo_names=()
+  local repo_name
+
+  read_lines_into repo_names < <(
+    aws ecr describe-repositories --region "$AWS_REGION" --output json 2>/dev/null \
+      | jq -r '.repositories[]?.repositoryName'
+  )
+
+  if [ "${#repo_names[@]}" -eq 0 ]; then
+    log_info "No se encontraron repositorios ECR en la region"
+    return
+  fi
+
+  for repo_name in "${repo_names[@]}"; do
+    [[ -z "$repo_name" ]] && continue
+    is_titvo_ecr_repository "$repo_name" || continue
+    empty_ecr_repository "$repo_name"
+  done
+}
+
+# ========================================
+# 1. Limpiar repositorios ECR Titvo
+# ========================================
+log_info "Paso 1/5: Limpiando repositorios ECR con prefijo tvo/titvo"
+empty_all_titvo_ecr_repositories
 echo ""
 
 # ========================================
@@ -361,14 +418,20 @@ if [ ! -d "$INFRA_DIR" ]; then
 else
     cd "$INFRA_DIR" || exit 1
 
-    # Lista de módulos a destruir en orden
+    # Lista de módulos a destruir en orden (inverso al deploy en deploy_runtime.go)
     MODULES=(
-        "titvo-auth-setup-aws/aws"
-        "titvo-agent-aws/aws"
-        "titvo-mcp-gateway-aws/aws"
-        "titvo-task-cli-files-aws/aws"
         "titvo-task-status-aws/aws"
         "titvo-task-trigger-aws/aws"
+        "titvo-task-cli-files-aws/aws"
+        "titvo-auth-setup-aws/aws"
+        "titvo-mcp-gateway/aws"
+        "titvo-agent-aws/aws"
+        "titvo-rag-indexer/aws"
+        "titvo-github-issue-aws/aws"
+        "titvo-bitbucket-code-insights-aws/aws"
+        "titvo-issue-report-aws/aws"
+        "titvo-git-commit-files-aws/aws"
+        "titvo-installer-ecr-publisher/aws"
         "titvo-security-scan-infra-aws/prod/us-east-1"
     )
 

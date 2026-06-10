@@ -38,7 +38,14 @@ func ensureDirExists(dir, errMsg string) error {
 }
 
 func runTerragrunt(dir, terragruntPath string, env map[string]string, action string) error {
-	return executeWithOptionsFn(terragruntPath, &ExecuteOptions{WorkingDir: dir, Env: env}, "run-all", action, "-input=false", "-auto-approve", "--terragrunt-non-interactive")
+	args := []string{
+		"run-all", action,
+		"-input=false", "-auto-approve", "--terragrunt-non-interactive",
+	}
+	if pluginCacheDir := env["TERRAGRUNT_PROVIDER_CACHE_DIR"]; pluginCacheDir != "" {
+		args = append(args, "--terragrunt-provider-cache", "--terragrunt-provider-cache-dir", pluginCacheDir)
+	}
+	return executeWithOptionsFn(terragruntPath, &ExecuteOptions{WorkingDir: dir, Env: env}, args...)
 }
 
 func runBuild(sourceDir, npmPath, nodeBinDir string, repeats int) error {
@@ -148,15 +155,18 @@ func deployInfra(config DeployConfig) error {
 		return fmt.Errorf("failed to get AWS account ID: %w", err)
 	}
 
+	printInfo(fmt.Sprintf("Provider cache directory: %s", pluginCacheDir))
+
 	env := map[string]string{
-		"AWS_ACCESS_KEY_ID":     config.AWSCredentials.AWSAccessKeyID,
-		"AWS_SECRET_ACCESS_KEY": config.AWSCredentials.AWSSecretAccessKey,
-		"AWS_REGION":            config.AWSCredentials.AWSRegion,
-		"AWS_ACCOUNT_ID":        accountID,
-		"TG_PLUGIN_CACHE_DIR":   pluginCacheDir,
-		"AWS_STAGE":             "prod",
-		"PATH":                  newPathEnv,
-		"TG_TF_PATH":            terraformPath,
+		"AWS_ACCESS_KEY_ID":             config.AWSCredentials.AWSAccessKeyID,
+		"AWS_SECRET_ACCESS_KEY":         config.AWSCredentials.AWSSecretAccessKey,
+		"AWS_REGION":                    config.AWSCredentials.AWSRegion,
+		"AWS_ACCOUNT_ID":                accountID,
+		"TERRAGRUNT_PROVIDER_CACHE":     "1",
+		"TERRAGRUNT_PROVIDER_CACHE_DIR": pluginCacheDir,
+		"AWS_STAGE":                     "prod",
+		"PATH":                          newPathEnv,
+		"TG_TF_PATH":                    terraformPath,
 	}
 	if config.Debug {
 		env["TG_LOG"] = "debug"

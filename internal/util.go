@@ -17,11 +17,21 @@ import (
 )
 
 func downloadFile(url string, dir string, fileName string) error {
-	resp, err := http.Get(url)
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("User-Agent", "titvo-installer")
+
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("download failed: %s returned HTTP %d", url, resp.StatusCode)
+	}
 
 	filePath := path.Join(dir, fileName)
 
@@ -33,6 +43,7 @@ func downloadFile(url string, dir string, fileName string) error {
 
 	_, err = io.Copy(out, resp.Body)
 	if err != nil {
+		_ = os.Remove(filePath)
 		return err
 	}
 

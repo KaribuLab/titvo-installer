@@ -1,4 +1,20 @@
 version: '3'
 
+dotenv:
+  - .env
+
+# Selecciona automaticamente el Taskfile del SO mediante la variable interna OS (GOOS):
+#   windows -> Taskfile_windows.yaml
+#   linux   -> Taskfile_linux.yaml
+#   darwin  -> Taskfile_darwin.yaml
+#
+# Uso: task --list
+#      task build
+#      task cleanup-orphans
+#      task clean-titvo
+#      task teardown-titvo
+
 includes:
-  titvo: ./Taskfile_{{OS}}.yaml
+  titvo:
+    taskfile: ./Taskfile_{{OS}}.yaml
+    flatten: true

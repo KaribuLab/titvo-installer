@@ -1,8 +1,7 @@
 version: '3'
 
-tasks:
-  build:
-    desc: Compila todos los comandos en el directorio cmd
+tasks:  build:
+    desc: Compila titvo-installer (bin/titvo)
     cmds:
       - mkdir -p bin
       - go build -o ./bin/titvo ./cmd/titvo-installer
@@ -13,3 +12,34 @@ tasks:
       - ./internal/**/*.go
       - go.mod
       - go.sum
+
+  cleanup-orphans:
+    desc: Dry-run de limpieza de recursos AWS huerfanos (bash)
+    dir: scripts
+    cmds:
+      - bash ./titvo_cleanup_orphans.sh
+
+  cleanup-orphans-apply:
+    desc: Ejecuta limpieza de recursos AWS huerfanos (bash, destructivo)
+    dir: scripts
+    cmds:
+      - bash ./titvo_cleanup_orphans.sh --apply
+
+  destroy-infra:
+    desc: Destruye infraestructura TITVO en AWS (bash, destructivo)
+    dir: scripts
+    cmds:
+      - bash ./titvo_destroy_infra.sh
+
+  clean-titvo:
+    desc: Elimina el directorio ~/.titvo del usuario (destructivo)
+    cmds:
+      - rm -rf ~/.titvo
+
+  teardown-titvo:
+    desc: Destruye infra (continua si falla), limpia huerfanos AWS y borra ~/.titvo (destructivo)
+    cmds:
+      - task: destroy-infra
+        ignore_error: true
+      - task: cleanup-orphans-apply
+      - task: clean-titvo

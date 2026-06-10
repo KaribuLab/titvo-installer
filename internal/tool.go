@@ -14,10 +14,10 @@ import (
 // https://github.com/gruntwork-io/terragrunt/releases/download/v0.69.1/terragrunt_linux_amd64
 const terragruntUrl = "https://github.com/gruntwork-io/terragrunt/releases/download/v%s/terragrunt_%s_%s"
 
-// https://releases.hashicorp.com/terraform/1.13.0/terraform_1.13.0_darwin_amd64.zip
-// https://releases.hashicorp.com/terraform/1.13.0/terraform_1.13.0_darwin_arm64.zip
-// https://releases.hashicorp.com/terraform/1.13.0/terraform_1.13.0_windows_amd64.zip
-// https://releases.hashicorp.com/terraform/1.13.0/terraform_1.13.0_linux_amd64.zip
+// https://releases.hashicorp.com/terraform/1.9.8/terraform_1.9.8_darwin_amd64.zip
+// https://releases.hashicorp.com/terraform/1.9.8/terraform_1.9.8_darwin_arm64.zip
+// https://releases.hashicorp.com/terraform/1.9.8/terraform_1.9.8_windows_amd64.zip
+// https://releases.hashicorp.com/terraform/1.9.8/terraform_1.9.8_linux_amd64.zip
 const terraformUrl = "https://releases.hashicorp.com/terraform/%s/terraform_%s_%s_%s.%s"
 
 // https://nodejs.org/download/release/v20.19.4/node-v20.19.4-darwin-x64.tar.gz
@@ -35,6 +35,40 @@ func toolExecutable(name string, osType OS) string {
 
 func TerragruntBinaryPath(binDir string, osType OS) string {
 	return path.Join(binDir, toolExecutable("terragrunt", osType))
+}
+
+// NodeBinDirFromInstallRoot returns the directory containing node/npm executables.
+// Windows packages place binaries at the install root; Unix packages use bin/.
+func NodeBinDirFromInstallRoot(installRoot string, osType OS) string {
+	if osType == Windows {
+		return installRoot
+	}
+	return path.Join(installRoot, "bin")
+}
+
+func terraformDownloadURL(version string, osType OS, arch Arch) string {
+	return fmt.Sprintf(terraformUrl, version, version, osType, arch, "zip")
+}
+
+func nodeDownloadSpec(version string, osType OS, arch Arch) (url, installFolder, archiveExt string) {
+	switch osType {
+	case Windows:
+		archLabel := "x64"
+		if arch == ARM64 {
+			archLabel = "arm64"
+		}
+		installFolder = fmt.Sprintf("node-v%s-win-%s", version, archLabel)
+		url = fmt.Sprintf(nodeUrl, version, version, "win", archLabel, "zip")
+		return url, installFolder, "zip"
+	default:
+		archDownload := "x64"
+		if osType == Darwin && arch == ARM64 {
+			archDownload = "arm64"
+		}
+		installFolder = fmt.Sprintf("node-v%s-%s-%s", version, osType, archDownload)
+		url = fmt.Sprintf(nodeUrl, version, version, osType, archDownload, "tar.gz")
+		return url, installFolder, "tar.gz"
+	}
 }
 
 func TerraformBinaryPath(binDir string, osType OS) string {
@@ -133,8 +167,16 @@ func LogConfiguredToolBinaries(config InstallToolConfig) error {
 	return nil
 }
 
-func DownloadTerragrunt(dir string, version string, osType OS, arch Arch) (string, error) {
+func terragruntDownloadURL(version string, osType OS, arch Arch) string {
 	url := fmt.Sprintf(terragruntUrl, version, osType, arch)
+	if osType == Windows {
+		url += ".exe"
+	}
+	return url
+}
+
+func DownloadTerragrunt(dir string, version string, osType OS, arch Arch) (string, error) {
+	url := terragruntDownloadURL(version, osType, arch)
 	printInfo("Downloading Terragrunt")
 	printInfo(url)
 	fileExtension := ""
@@ -164,7 +206,7 @@ func DownloadTerragrunt(dir string, version string, osType OS, arch Arch) (strin
 }
 
 func DownloadTerraform(dir string, version string, osType OS, arch Arch) (string, error) {
-	url := fmt.Sprintf(terraformUrl, version, version, osType, arch, "zip")
+	url := terraformDownloadURL(version, osType, arch)
 	printInfo("Downloading Terraform")
 	printInfo(url)
 	zipFileName := "terraform.zip"
@@ -192,33 +234,25 @@ func DownloadTerraform(dir string, version string, osType OS, arch Arch) (string
 }
 
 func DownloadNode(dir string, version string, osType OS, arch Arch) (string, error) {
-	var url string
-	var nodeDir string
-	switch osType {
-	case Windows:
-		url = fmt.Sprintf(nodeUrl, version, version, "win", "x64", "zip")
-		nodeDir = fmt.Sprintf("node-v%s-%s-%s", version, "win", "x64")
-	default:
-		archDownload := "x64"
-		if osType == Darwin && arch == ARM64 {
-			archDownload = "arm64"
-		}
-		url = fmt.Sprintf(nodeUrl, version, version, osType, archDownload, "tar.gz")
-		nodeDir = fmt.Sprintf("node-v%s-%s-%s", version, osType, archDownload)
-	}
+	url, nodeDir, archiveExt := nodeDownloadSpec(version, osType, arch)
 	printInfo("Downloading Node")
 	printInfo(url)
-	tarFileName := "node.tar.gz"
-	err := downloadFile(url, dir, tarFileName)
+	archiveFileName := "node." + archiveExt
+	err := downloadFile(url, dir, archiveFileName)
 	if err != nil {
 		return "", err
 	}
-	tarPath := path.Join(dir, tarFileName)
-	err = extractTarGz(tarPath, dir)
+	archivePath := path.Join(dir, archiveFileName)
+	if archiveExt == "zip" {
+		err = extractZip(archivePath, dir)
+	} else {
+		err = extractTarGz(archivePath, dir)
+	}
 	if err != nil {
 		return "", err
 	}
-	nodeBinDir := path.Join(dir, nodeDir, "bin")
+	installRoot := path.Join(dir, nodeDir)
+	nodeBinDir := NodeBinDirFromInstallRoot(installRoot, osType)
 	nodePath := path.Join(nodeBinDir, toolExecutable("node", osType))
 	err = ExecuteWithOptions(nodePath, &ExecuteOptions{
 		WorkingDir: nodeBinDir,
@@ -234,7 +268,7 @@ func DownloadNode(dir string, version string, osType OS, arch Arch) (string, err
 	if err != nil {
 		return "", err
 	}
-	return path.Join(dir, nodeDir), os.Remove(tarPath)
+	return installRoot, os.Remove(archivePath)
 }
 
 type InstallToolConfig struct {
@@ -288,7 +322,7 @@ func InstallTools() (config *InstallToolConfig, err error) {
 		Arch:             arch,
 		TitvoDir:         titvoDir,
 		TerraformBinDir:  terraformDir,
-		NodeBinDir:       path.Join(nodeDir, "bin"),
+		NodeBinDir:       NodeBinDirFromInstallRoot(nodeDir, os),
 		TerragruntBinDir: terragruntDir,
 	}
 	if err := LogConfiguredToolBinaries(*config); err != nil {

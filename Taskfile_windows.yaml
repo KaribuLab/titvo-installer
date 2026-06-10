@@ -1,0 +1,47 @@
+version: '3'
+
+tasks:
+  build:
+    desc: Compila titvo-installer para Windows (bin/titvo.exe)
+    cmds:
+      - powershell -NoProfile -Command "if (-not (Test-Path -LiteralPath bin)) { New-Item -ItemType Directory -Path bin | Out-Null }"
+      - go build -o ./bin/titvo.exe ./cmd/titvo-installer
+    generates:
+      - ./bin/titvo.exe
+    sources:
+      - ./cmd/**/*.go
+      - ./internal/**/*.go
+      - go.mod
+      - go.sum
+
+  cleanup-orphans:
+    desc: Dry-run de limpieza de recursos AWS huerfanos (PowerShell)
+    dir: scripts
+    cmds:
+      - powershell -NoProfile -ExecutionPolicy Bypass -File ./titvo_cleanup_orphans.ps1
+
+  cleanup-orphans-apply:
+    desc: Ejecuta limpieza de recursos AWS huerfanos (PowerShell, destructivo)
+    dir: scripts
+    cmds:
+      - powershell -NoProfile -ExecutionPolicy Bypass -File ./titvo_cleanup_orphans.ps1 -Apply
+
+  destroy-infra:
+    desc: Destruye infraestructura TITVO en AWS (PowerShell, destructivo)
+    dir: scripts
+    cmds:
+      - powershell -NoProfile -ExecutionPolicy Bypass -File ./titvo_destroy_infra.ps1
+
+  clean-titvo:
+    desc: Elimina el directorio %USERPROFILE%\.titvo del usuario (destructivo)
+    dir: scripts
+    cmds:
+      - powershell -NoProfile -ExecutionPolicy Bypass -File ./titvo_clean_home.ps1
+
+  teardown-titvo:
+    desc: Destruye infra (continua si falla), limpia huerfanos AWS y borra ~/.titvo (destructivo)
+    cmds:
+      - task: destroy-infra
+        ignore_error: true
+      - task: cleanup-orphans-apply
+      - task: clean-titvo

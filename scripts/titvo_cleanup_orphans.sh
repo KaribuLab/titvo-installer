@@ -822,58 +822,62 @@ delete_iam_role() {
   run "aws iam delete-role --role-name \"$role_name\""
 }
 
-# ---------- referencias para evitar borrar recursos en uso ----------
-echo "Recolectando referencias en uso (IAM)..."
+collect_used_iam_references() {
+  # Recolectar despues de borrar Lambda/ECS/Batch para no marcar roles de recursos ya eliminados.
+  USED_IAM_ROLES=""
 
-# Lambda refs
-while IFS=$'\t' read -r fn ptype imageuri rolearn; do
-  if [[ "$ptype" == "Image" && -n "$imageuri" && "$imageuri" != "null" ]]; then
-    :
-  fi
-  if [[ -n "$rolearn" && "$rolearn" != "null" ]]; then
-    role="${rolearn##*/}"
-    mark_used_iam_role "$role"
-  fi
-done < <(
-  aws lambda list-functions --region "$REGION" --output json \
-    | jq -r '.Functions[] | [.FunctionName, .PackageType, .Code.ImageUri, .Role] | @tsv'
-)
+  echo "Recolectando referencias en uso (IAM)..."
 
-# ECS refs
-taskdefs="$(aws ecs list-task-definitions --status ACTIVE --region "$REGION" --output json | jq -r '.taskDefinitionArns[]?')"
-while read -r td; do
-  [[ -z "$td" ]] && continue
-  data="$(aws ecs describe-task-definition --task-definition "$td" --region "$REGION" --output json)"
-  while read -r img; do
-    [[ -z "$img" || "$img" == "null" ]] && continue
-    if [[ "$img" == *.dkr.ecr.*.amazonaws.com/* ]]; then
+  # Lambda refs
+  while IFS=$'\t' read -r fn ptype imageuri rolearn; do
+    if [[ "$ptype" == "Image" && -n "$imageuri" && "$imageuri" != "null" ]]; then
       :
     fi
-  done < <(echo "$data" | jq -r '.taskDefinition.containerDefinitions[]?.image')
-
-  while read -r r; do
-    [[ -z "$r" || "$r" == "null" ]] && continue
-    mark_used_iam_role "${r##*/}"
-  done < <(echo "$data" | jq -r '.taskDefinition.taskRoleArn, .taskDefinition.executionRoleArn')
-done <<< "$taskdefs"
-
-# Batch refs
-jobdefs="$(aws batch describe-job-definitions --status ACTIVE --region "$REGION" --output json | jq -r '.jobDefinitions[]?.jobDefinitionArn')"
-while read -r jd; do
-  [[ -z "$jd" ]] && continue
-  data="$(aws batch describe-job-definitions --job-definitions "$jd" --region "$REGION" --output json)"
-  while read -r img; do
-    [[ -z "$img" || "$img" == "null" ]] && continue
-    if [[ "$img" == *.dkr.ecr.*.amazonaws.com/* ]]; then
-      :
+    if [[ -n "$rolearn" && "$rolearn" != "null" ]]; then
+      role="${rolearn##*/}"
+      mark_used_iam_role "$role"
     fi
-  done < <(echo "$data" | jq -r '.jobDefinitions[]?.containerProperties.image')
+  done < <(
+    aws lambda list-functions --region "$REGION" --output json \
+      | jq -r '.Functions[] | [.FunctionName, .PackageType, .Code.ImageUri, .Role] | @tsv'
+  )
 
-  while read -r r; do
-    [[ -z "$r" || "$r" == "null" ]] && continue
-    mark_used_iam_role "${r##*/}"
-  done < <(echo "$data" | jq -r '.jobDefinitions[]?.containerProperties.jobRoleArn, .jobDefinitions[]?.containerProperties.executionRoleArn')
-done <<< "$jobdefs"
+  # ECS refs
+  taskdefs="$(aws ecs list-task-definitions --status ACTIVE --region "$REGION" --output json | jq -r '.taskDefinitionArns[]?')"
+  while read -r td; do
+    [[ -z "$td" ]] && continue
+    data="$(aws ecs describe-task-definition --task-definition "$td" --region "$REGION" --output json)"
+    while read -r img; do
+      [[ -z "$img" || "$img" == "null" ]] && continue
+      if [[ "$img" == *.dkr.ecr.*.amazonaws.com/* ]]; then
+        :
+      fi
+    done < <(echo "$data" | jq -r '.taskDefinition.containerDefinitions[]?.image')
+
+    while read -r r; do
+      [[ -z "$r" || "$r" == "null" ]] && continue
+      mark_used_iam_role "${r##*/}"
+    done < <(echo "$data" | jq -r '.taskDefinition.taskRoleArn, .taskDefinition.executionRoleArn')
+  done <<< "$taskdefs"
+
+  # Batch refs
+  jobdefs="$(aws batch describe-job-definitions --status ACTIVE --region "$REGION" --output json | jq -r '.jobDefinitions[]?.jobDefinitionArn')"
+  while read -r jd; do
+    [[ -z "$jd" ]] && continue
+    data="$(aws batch describe-job-definitions --job-definitions "$jd" --region "$REGION" --output json)"
+    while read -r img; do
+      [[ -z "$img" || "$img" == "null" ]] && continue
+      if [[ "$img" == *.dkr.ecr.*.amazonaws.com/* ]]; then
+        :
+      fi
+    done < <(echo "$data" | jq -r '.jobDefinitions[]?.containerProperties.image')
+
+    while read -r r; do
+      [[ -z "$r" || "$r" == "null" ]] && continue
+      mark_used_iam_role "${r##*/}"
+    done < <(echo "$data" | jq -r '.jobDefinitions[]?.containerProperties.jobRoleArn, .jobDefinitions[]?.containerProperties.executionRoleArn')
+  done <<< "$jobdefs"
+}
 
 run_cleanup_for_prefix() {
   local current_prefix="$1"
@@ -1112,6 +1116,7 @@ aws logs describe-log-groups --region "$REGION" --output json \
 done
 
 # 19) IAM
+collect_used_iam_references
 echo "IAM candidates (Titvo match):"
 aws iam list-roles --output json | jq -r --arg p "$PREFIX" '.Roles[]?
   | select((.RoleName | ascii_downcase | startswith($p)) or (.RoleName | ascii_downcase | contains("tvo")))

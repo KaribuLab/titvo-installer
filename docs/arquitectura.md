@@ -202,7 +202,7 @@ Durante la ejecución, el instalador crea la siguiente estructura en el director
 ~/.titvo/
 ├── bin/                       # Binarios de Terraform y Terragrunt
 ├── node-v20.19.4-<os>-<arch>/ # Node.js descomprimido
-├── terraform-plugins/         # Caché de plugins de Terraform (TG_PLUGIN_CACHE_DIR)
+├── terraform-plugins/         # Caché de providers (TERRAGRUNT_PROVIDER_CACHE_DIR)
 └── infra/                     # Repositorios clonados de infraestructura
     ├── titvo-security-scan-infra-aws/
     ├── titvo-agent-aws/
