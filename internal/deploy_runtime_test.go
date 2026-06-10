@@ -146,6 +146,9 @@ func TestDownloadSourceRunsGitClone(t *testing.T) {
 		if options == nil || options.WorkingDir != "/tmp/work" {
 			t.Fatalf("unexpected working dir")
 		}
+		if options.Env == nil || options.Env["GIT_SSH_COMMAND"] != gitSSHAcceptNew {
+			t.Fatalf("expected GIT_SSH_COMMAND in git clone env, got %v", options.Env)
+		}
 		if len(args) != 2 || args[0] != "clone" || args[1] != "https://example.com/repo.git" {
 			t.Fatalf("unexpected args: %v", args)
 		}

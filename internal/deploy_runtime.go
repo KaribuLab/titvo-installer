@@ -42,7 +42,7 @@ func downloadSource(dir, sourceURL, component string) error {
 			return fmt.Errorf("failed to remove existing clone %s: %w", target, err)
 		}
 	}
-	err := executeWithOptionsFn("git", &ExecuteOptions{WorkingDir: dir}, "clone", sourceURL)
+	err := executeWithOptionsFn("git", &ExecuteOptions{WorkingDir: dir, Env: gitExecuteEnv()}, "clone", sourceURL)
 	printInfo(fmt.Sprintf("Downloaded %s from %s to %s", component, sourceURL, dir))
 	return err
 }
@@ -202,7 +202,7 @@ func deployNodeComponentFromSource(state *installState, module, sourceDir, label
 	if err := runOnce(state, &m.Built, fmt.Sprintf("Skipping build of %s (already built)", label), func() error {
 		if needsSubmodules {
 			printInfo("Updating git submodules")
-			if err := executeWithOptionsFn("git", &ExecuteOptions{WorkingDir: sourceDir}, "submodule", "update", "--init"); err != nil {
+			if err := executeWithOptionsFn("git", &ExecuteOptions{WorkingDir: sourceDir, Env: gitExecuteEnv()}, "submodule", "update", "--init"); err != nil {
 				return fmt.Errorf("git submodule update failed: %w", err)
 			}
 		}

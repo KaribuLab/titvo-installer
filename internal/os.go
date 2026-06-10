@@ -64,6 +64,15 @@ type ExecuteOptions struct {
 	Env        map[string]string // Variables específicas para esta ejecución
 }
 
+const gitSSHAcceptNew = "ssh -o StrictHostKeyChecking=accept-new"
+
+// gitExecuteEnv returns environment overrides for git commands that may reach
+// hosts over SSH (e.g. submodules). accept-new auto-trusts a host on first
+// contact without an interactive prompt; changed keys are still rejected.
+func gitExecuteEnv() map[string]string {
+	return map[string]string{"GIT_SSH_COMMAND": gitSSHAcceptNew}
+}
+
 func Execute(command string, args ...string) error {
 	return ExecuteWithOptions(command, nil, args...)
 }

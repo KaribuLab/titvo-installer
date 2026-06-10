@@ -6,6 +6,16 @@ import (
 	"testing"
 )
 
+func TestGitExecuteEnv(t *testing.T) {
+	env := gitExecuteEnv()
+	if env["GIT_SSH_COMMAND"] != gitSSHAcceptNew {
+		t.Fatalf("GIT_SSH_COMMAND = %q, want %q", env["GIT_SSH_COMMAND"], gitSSHAcceptNew)
+	}
+	if len(env) != 1 {
+		t.Fatalf("expected single env entry, got %d", len(env))
+	}
+}
+
 func TestPathWithBinDirFirst(t *testing.T) {
 	t.Setenv("PATH", "/usr/bin:/bin")
 	got := pathWithBinDirFirst("/custom/node/bin")
