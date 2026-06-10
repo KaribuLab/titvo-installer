@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"strings"
 )
 
 type privateSubnetConfig struct {
@@ -24,10 +25,36 @@ var submitBatchJobFn = SubmitBatchJob
 var putRecordFn = PutRecord
 var mkdirAllFn = os.MkdirAll
 
+// repoDirNameFromURL derives the directory name git clone would create from a
+// repository URL (the base name without the .git suffix).
+func repoDirNameFromURL(sourceURL string) string {
+	return strings.TrimSuffix(path.Base(sourceURL), ".git")
+}
+
 func downloadSource(dir, sourceURL, component string) error {
+	// Remove any leftover directory from a previously interrupted clone so the
+	// resume flow does not fail with "destination path already exists".
+	target := path.Join(dir, repoDirNameFromURL(sourceURL))
+	if _, statErr := os.Stat(target); statErr == nil {
+		if err := os.RemoveAll(target); err != nil {
+			return fmt.Errorf("failed to remove existing clone %s: %w", target, err)
+		}
+	}
 	err := executeWithOptionsFn("git", &ExecuteOptions{WorkingDir: dir}, "clone", sourceURL)
 	printInfo(fmt.Sprintf("Downloaded %s from %s to %s", component, sourceURL, dir))
 	return err
+}
+
+// cloneModule downloads a module into infraDir unless it has already been
+// cloned according to the install state.
+func cloneModule(state *installState, infraDir, module, label string, downloadFn func(string) error) error {
+	m := state.module(module)
+	return runOnce(state, &m.Cloned, fmt.Sprintf("Skipping download of %s (already cloned)", label), func() error {
+		if err := downloadFn(infraDir); err != nil {
+			return fmt.Errorf("failed to download %s: %w", label, err)
+		}
+		return nil
+	})
 }
 
 func ensureDirExists(dir, errMsg string) error {
@@ -73,52 +100,71 @@ func applyTerragruntInDir(dir, label, terragruntPath string, env map[string]stri
 	return nil
 }
 
-func deployTerraformComponentFromSource(sourceDir, label, terragruntPath string, env map[string]string) error {
+func deployTerraformComponentFromSource(state *installState, module, sourceDir, label, terragruntPath string, env map[string]string) error {
 	if err := ensureDirExists(sourceDir, "%s directory does not exist"); err != nil {
 		return err
 	}
 	prodDir := path.Join(sourceDir, "aws")
-	printInfo(fmt.Sprintf("Deploying %s to %s", label, prodDir))
-	return applyTerragruntInDir(prodDir, label, terragruntPath, env)
+	m := state.module(module)
+	return runOnce(state, &m.Applied, fmt.Sprintf("Skipping apply of %s (already applied)", label), func() error {
+		printInfo(fmt.Sprintf("Deploying %s to %s", label, prodDir))
+		return applyTerragruntInDir(prodDir, label, terragruntPath, env)
+	})
 }
 
-func deployNodeComponentFromSource(sourceDir, label, terragruntPath, npmPath, nodeBinDir string, env map[string]string, buildRepeats int, needsSubmodules bool) error {
+func deployNodeComponentFromSource(state *installState, module, sourceDir, label, terragruntPath, npmPath, nodeBinDir string, env map[string]string, buildRepeats int, needsSubmodules bool) error {
 	if err := ensureDirExists(sourceDir, "%s directory does not exist"); err != nil {
 		return err
 	}
 
-	if needsSubmodules {
-		printInfo("Updating git submodules")
-		if err := executeWithOptionsFn("git", &ExecuteOptions{WorkingDir: sourceDir}, "submodule", "update", "--init"); err != nil {
-			return fmt.Errorf("git submodule update failed: %w", err)
+	m := state.module(module)
+	if err := runOnce(state, &m.Built, fmt.Sprintf("Skipping build of %s (already built)", label), func() error {
+		if needsSubmodules {
+			printInfo("Updating git submodules")
+			if err := executeWithOptionsFn("git", &ExecuteOptions{WorkingDir: sourceDir}, "submodule", "update", "--init"); err != nil {
+				return fmt.Errorf("git submodule update failed: %w", err)
+			}
 		}
+
+		if buildRepeats > 0 {
+			if err := runBuild(sourceDir, npmPath, nodeBinDir, buildRepeats); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		return err
 	}
 
-	if buildRepeats > 0 {
-		if err := runBuild(sourceDir, npmPath, nodeBinDir, buildRepeats); err != nil {
-			return err
-		}
-	}
-
-	return deployTerraformComponentFromSource(sourceDir, label, terragruntPath, env)
+	return deployTerraformComponentFromSource(state, module, sourceDir, label, terragruntPath, env)
 }
 
-func deployNodeComponent(infraDir, repoDirName, label, terragruntPath, npmPath, nodeBinDir string, downloadFn func(string) error, env map[string]string, buildRepeats int, needsSubmodules bool) error {
-	if err := downloadFn(infraDir); err != nil {
-		return fmt.Errorf("failed to download %s: %w", label, err)
+func deployNodeComponent(state *installState, infraDir, repoDirName, label, terragruntPath, npmPath, nodeBinDir string, downloadFn func(string) error, env map[string]string, buildRepeats int, needsSubmodules bool) error {
+	if err := cloneModule(state, infraDir, repoDirName, label, downloadFn); err != nil {
+		return err
 	}
 
 	sourceDir := path.Join(infraDir, repoDirName)
-	return deployNodeComponentFromSource(sourceDir, label, terragruntPath, npmPath, nodeBinDir, env, buildRepeats, needsSubmodules)
+	return deployNodeComponentFromSource(state, repoDirName, sourceDir, label, terragruntPath, npmPath, nodeBinDir, env, buildRepeats, needsSubmodules)
 }
 
 func deployInfra(config DeployConfig) error {
+	state, err := loadInstallState(config.InstallToolConfig.TitvoDir)
+	if err != nil {
+		return err
+	}
+	if len(state.Modules) > 0 {
+		printInfo("Resuming installation from saved state")
+	}
+
 	infraDir := path.Join(config.InstallToolConfig.TitvoDir, "infra")
 	if err := mkdirAllFn(infraDir, 0755); err != nil {
 		return err
 	}
-	if err := DownloadInfraSource(infraDir); err != nil {
-		return fmt.Errorf("failed to download infra: %w", err)
+
+	const infraModule = "titvo-security-scan-infra-aws"
+	if err := cloneModule(state, infraDir, infraModule, "infra", DownloadInfraSource); err != nil {
+		return err
 	}
 
 	baseSourceDir := path.Join(infraDir, "titvo-security-scan-infra-aws")
@@ -220,9 +266,15 @@ func deployInfra(config DeployConfig) error {
 		}
 	}
 
-	printInfo("Executing terragrunt apply base infra")
-	if err := runTerragrunt(baseProdDir, terragruntPath, env, "apply"); err != nil {
-		return fmt.Errorf("terragrunt apply failed: %w", err)
+	infraMod := state.module(infraModule)
+	if err := runOnce(state, &infraMod.Applied, "Skipping base infra apply (already applied)", func() error {
+		printInfo("Executing terragrunt apply base infra")
+		if err := runTerragrunt(baseProdDir, terragruntPath, env, "apply"); err != nil {
+			return fmt.Errorf("terragrunt apply failed: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return err
 	}
 
 	type scmSecretResult struct {
@@ -267,80 +319,109 @@ func deployInfra(config DeployConfig) error {
 		}
 	}
 
-	if err := deployNodeComponent(infraDir, "titvo-git-commit-files-aws", "git commit files aws", terragruntPath, npmPath, nodeBinDir, DownloadGitCommitFilesAWSSource, env, 1, true); err != nil {
+	if err := deployNodeComponent(state, infraDir, "titvo-git-commit-files-aws", "git commit files aws", terragruntPath, npmPath, nodeBinDir, DownloadGitCommitFilesAWSSource, env, 1, true); err != nil {
 		return err
 	}
 
-	if err := DownloadAgentAWSSource(infraDir); err != nil {
-		return fmt.Errorf("failed to download agent aws: %w", err)
+	const agentModule = "titvo-agent-aws"
+	if err := cloneModule(state, infraDir, agentModule, "agent aws", DownloadAgentAWSSource); err != nil {
+		return err
 	}
-	agentSourceDir := path.Join(infraDir, "titvo-agent-aws")
+	agentSourceDir := path.Join(infraDir, agentModule)
 	if err := ensureDirExists(agentSourceDir, "agent aws directory %s does not exist"); err != nil {
 		return err
 	}
 	agentECRDir := path.Join(agentSourceDir, "aws", "ecr")
-	printInfo(fmt.Sprintf("Deploying agent ECR to %s", agentECRDir))
-	if err := applyTerragruntInDir(agentECRDir, "agent ECR", terragruntPath, env); err != nil {
+	agentMod := state.module(agentModule)
+	if err := runOnce(state, &agentMod.AppliedECR, "Skipping agent ECR apply (already applied)", func() error {
+		printInfo(fmt.Sprintf("Deploying agent ECR to %s", agentECRDir))
+		return applyTerragruntInDir(agentECRDir, "agent ECR", terragruntPath, env)
+	}); err != nil {
 		return err
 	}
 
-	if err := DownloadMCPGatewaySource(infraDir); err != nil {
-		return fmt.Errorf("failed to download MCP gateway: %w", err)
+	const mcpGatewayModule = "titvo-mcp-gateway"
+	if err := cloneModule(state, infraDir, mcpGatewayModule, "MCP gateway", DownloadMCPGatewaySource); err != nil {
+		return err
 	}
-	mcpGatewaySourceDir := path.Join(infraDir, "titvo-mcp-gateway")
+	mcpGatewaySourceDir := path.Join(infraDir, mcpGatewayModule)
 	if err := ensureDirExists(mcpGatewaySourceDir, "MCP gateway directory %s does not exist"); err != nil {
 		return err
 	}
 	mcpGatewayECRDir := path.Join(mcpGatewaySourceDir, "aws", "ecr")
-	printInfo(fmt.Sprintf("Deploying MCP gateway ECR to %s", mcpGatewayECRDir))
-	if err := applyTerragruntInDir(mcpGatewayECRDir, "MCP gateway ECR", terragruntPath, env); err != nil {
+	mcpGatewayMod := state.module(mcpGatewayModule)
+	if err := runOnce(state, &mcpGatewayMod.AppliedECR, "Skipping MCP gateway ECR apply (already applied)", func() error {
+		printInfo(fmt.Sprintf("Deploying MCP gateway ECR to %s", mcpGatewayECRDir))
+		return applyTerragruntInDir(mcpGatewayECRDir, "MCP gateway ECR", terragruntPath, env)
+	}); err != nil {
 		return err
 	}
 
-	if err := DownloadRagIndexerSource(infraDir); err != nil {
-		return fmt.Errorf("failed to download rag indexer: %w", err)
+	const ragIndexerModule = "titvo-rag-indexer"
+	if err := cloneModule(state, infraDir, ragIndexerModule, "rag indexer", DownloadRagIndexerSource); err != nil {
+		return err
 	}
-	ragIndexerSourceDir := path.Join(infraDir, "titvo-rag-indexer")
+	ragIndexerSourceDir := path.Join(infraDir, ragIndexerModule)
 	if err := ensureDirExists(ragIndexerSourceDir, "rag indexer directory %s does not exist"); err != nil {
 		return err
 	}
 	ragIndexerECRDir := path.Join(ragIndexerSourceDir, "aws", "ecr")
-	printInfo(fmt.Sprintf("Deploying rag indexer ECR to %s", ragIndexerECRDir))
-	if err := applyTerragruntInDir(ragIndexerECRDir, "rag indexer ECR", terragruntPath, env); err != nil {
+	ragIndexerMod := state.module(ragIndexerModule)
+	if err := runOnce(state, &ragIndexerMod.AppliedECR, "Skipping rag indexer ECR apply (already applied)", func() error {
+		printInfo(fmt.Sprintf("Deploying rag indexer ECR to %s", ragIndexerECRDir))
+		return applyTerragruntInDir(ragIndexerECRDir, "rag indexer ECR", terragruntPath, env)
+	}); err != nil {
 		return err
 	}
 
-	if err := DownloadInstallerECRPublisherSource(infraDir); err != nil {
-		return fmt.Errorf("failed to download installer ecr publisher: %w", err)
+	const ecrPublisherModule = "titvo-installer-ecr-publisher"
+	if err := cloneModule(state, infraDir, ecrPublisherModule, "installer ecr publisher", DownloadInstallerECRPublisherSource); err != nil {
+		return err
 	}
-	ecrPublisherSource := path.Join(infraDir, "titvo-installer-ecr-publisher")
+	ecrPublisherSource := path.Join(infraDir, ecrPublisherModule)
 	if err := ensureDirExists(ecrPublisherSource, "installer ecr publisher directory %s does not exist"); err != nil {
 		return err
 	}
 	ecrPublisherAWSDir := path.Join(ecrPublisherSource, "aws")
-	printInfo("Executing terragrunt apply installer ecr publisher")
-	if err := runTerragrunt(ecrPublisherAWSDir, terragruntPath, env, "apply"); err != nil {
-		return fmt.Errorf("terragrunt apply installer ecr publisher failed: %w", err)
-	}
-
-	jobDefinitionARN, err := getParameterFn(&config.AWSCredentials, "/tvo/security-scan/prod/infra/ecr/publisher/job_definition_arn")
-	if err != nil {
-		return fmt.Errorf("failed to get ecr publisher job definition arn: %w", err)
-	}
-	jobQueueARN, err := getParameterFn(&config.AWSCredentials, "/tvo/security-scan/prod/infra/ecr/publisher/job_queue_arn")
-	if err != nil {
-		return fmt.Errorf("failed to get ecr publisher job queue arn: %w", err)
-	}
-	for _, job := range installerECRPublisherJobs(config.AWSCredentials.AWSRegion) {
-		printInfo(fmt.Sprintf("Submitting installer ecr publisher job: %s", job.Name))
-		if err := submitBatchJobFn(&config.AWSCredentials, job.Name, jobQueueARN, jobDefinitionARN, job.EnvVars); err != nil {
-			return fmt.Errorf("failed to submit installer ecr publisher job %s: %w", job.Name, err)
+	ecrPublisherMod := state.module(ecrPublisherModule)
+	if err := runOnce(state, &ecrPublisherMod.Applied, "Skipping installer ecr publisher apply (already applied)", func() error {
+		printInfo("Executing terragrunt apply installer ecr publisher")
+		if err := runTerragrunt(ecrPublisherAWSDir, terragruntPath, env, "apply"); err != nil {
+			return fmt.Errorf("terragrunt apply installer ecr publisher failed: %w", err)
 		}
+		return nil
+	}); err != nil {
+		return err
 	}
 
-	printInfo("Destroying installer ecr publisher")
-	if err := runTerragrunt(ecrPublisherAWSDir, terragruntPath, env, "destroy"); err != nil {
-		return fmt.Errorf("terragrunt destroy installer ecr publisher failed: %w", err)
+	if err := runOnce(state, &ecrPublisherMod.Submitted, "Skipping installer ecr publisher jobs (already submitted)", func() error {
+		jobDefinitionARN, err := getParameterFn(&config.AWSCredentials, "/tvo/security-scan/prod/infra/ecr/publisher/job_definition_arn")
+		if err != nil {
+			return fmt.Errorf("failed to get ecr publisher job definition arn: %w", err)
+		}
+		jobQueueARN, err := getParameterFn(&config.AWSCredentials, "/tvo/security-scan/prod/infra/ecr/publisher/job_queue_arn")
+		if err != nil {
+			return fmt.Errorf("failed to get ecr publisher job queue arn: %w", err)
+		}
+		for _, job := range installerECRPublisherJobs(config.AWSCredentials.AWSRegion) {
+			printInfo(fmt.Sprintf("Submitting installer ecr publisher job: %s", job.Name))
+			if err := submitBatchJobFn(&config.AWSCredentials, job.Name, jobQueueARN, jobDefinitionARN, job.EnvVars); err != nil {
+				return fmt.Errorf("failed to submit installer ecr publisher job %s: %w", job.Name, err)
+			}
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	if err := runOnce(state, &ecrPublisherMod.Destroyed, "Skipping installer ecr publisher destroy (already destroyed)", func() error {
+		printInfo("Destroying installer ecr publisher")
+		if err := runTerragrunt(ecrPublisherAWSDir, terragruntPath, env, "destroy"); err != nil {
+			return fmt.Errorf("terragrunt destroy installer ecr publisher failed: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return err
 	}
 
 	reportingComponents := []struct {
@@ -371,20 +452,20 @@ func deployInfra(config DeployConfig) error {
 		}{repoDirName: "titvo-github-issue-aws", label: "github issue aws", downloadFn: DownloadGithubIssueAWSSource, buildRepeat: 1, needsSubmodule: true})
 	}
 	for _, component := range reportingComponents {
-		if err := deployNodeComponent(infraDir, component.repoDirName, component.label, terragruntPath, npmPath, nodeBinDir, component.downloadFn, env, component.buildRepeat, component.needsSubmodule); err != nil {
+		if err := deployNodeComponent(state, infraDir, component.repoDirName, component.label, terragruntPath, npmPath, nodeBinDir, component.downloadFn, env, component.buildRepeat, component.needsSubmodule); err != nil {
 			return err
 		}
 	}
 
-	if err := deployTerraformComponentFromSource(ragIndexerSourceDir, "rag indexer", terragruntPath, env); err != nil {
+	if err := deployTerraformComponentFromSource(state, ragIndexerModule, ragIndexerSourceDir, "rag indexer", terragruntPath, env); err != nil {
 		return err
 	}
 
-	if err := deployTerraformComponentFromSource(agentSourceDir, "agent aws", terragruntPath, env); err != nil {
+	if err := deployTerraformComponentFromSource(state, agentModule, agentSourceDir, "agent aws", terragruntPath, env); err != nil {
 		return err
 	}
 
-	if err := deployTerraformComponentFromSource(mcpGatewaySourceDir, "MCP gateway", terragruntPath, env); err != nil {
+	if err := deployTerraformComponentFromSource(state, mcpGatewayModule, mcpGatewaySourceDir, "MCP gateway", terragruntPath, env); err != nil {
 		return err
 	}
 
@@ -401,7 +482,7 @@ func deployInfra(config DeployConfig) error {
 		{repoDirName: "titvo-task-status-aws", label: "task status", downloadFn: DownloadTaskStatusSource, buildRepeats: 1, needsSubmodule: true},
 	}
 	for _, component := range coreComponents {
-		if err := deployNodeComponent(infraDir, component.repoDirName, component.label, terragruntPath, npmPath, nodeBinDir, component.downloadFn, env, component.buildRepeats, component.needsSubmodule); err != nil {
+		if err := deployNodeComponent(state, infraDir, component.repoDirName, component.label, terragruntPath, npmPath, nodeBinDir, component.downloadFn, env, component.buildRepeats, component.needsSubmodule); err != nil {
 			return err
 		}
 	}

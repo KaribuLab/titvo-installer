@@ -66,8 +66,22 @@ type StartConfig struct {
 	TitvoDir          string
 }
 
-// StartConfiguration starts the configuration
+// StartConfiguration starts the configuration, skipping it when a previous run
+// already completed it. This step is not idempotent (it creates a new user and
+// API key on every run), so it must only run once per installation.
 func StartConfiguration(config *StartConfig) error {
+	state, err := loadInstallState(config.TitvoDir)
+	if err != nil {
+		return err
+	}
+	configMod := state.module("configuration")
+	return runOnce(state, &configMod.Applied, "Skipping configuration (already completed)", func() error {
+		return runStartConfiguration(config)
+	})
+}
+
+// runStartConfiguration performs the actual configuration work.
+func runStartConfiguration(config *StartConfig) error {
 	printInfo("Starting configuration")
 	dynamoUserTableName, err := GetParameter(config.AWSCredentials, "/tvo/security-scan/prod/infra/dynamo/user-table-name")
 	if err != nil {

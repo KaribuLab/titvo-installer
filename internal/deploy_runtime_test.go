@@ -90,6 +90,14 @@ func withRuntimeStubs(t *testing.T) {
 	})
 }
 
+func newTestInstallState(t *testing.T) *installState {
+	t.Helper()
+	return &installState{
+		filePath: filepath.Join(t.TempDir(), installStateFileName),
+		Modules:  map[string]*moduleState{},
+	}
+}
+
 func createRequiredInfraDirs(t *testing.T, titvoDir string) {
 	t.Helper()
 	paths := []string{
@@ -366,7 +374,7 @@ func TestRunBuildZeroRepeats(t *testing.T) {
 func TestDeployNodeComponentMissingDir(t *testing.T) {
 	withRuntimeStubs(t)
 	downloadCalled := false
-	err := deployNodeComponent(t.TempDir(), "missing-repo", "comp", "terragrunt", "npm", "/tmp/node/bin", func(dir string) error {
+	err := deployNodeComponent(newTestInstallState(t), t.TempDir(), "missing-repo", "comp", "terragrunt", "npm", "/tmp/node/bin", func(dir string) error {
 		downloadCalled = true
 		return nil
 	}, map[string]string{}, 0, false)
@@ -380,7 +388,7 @@ func TestDeployNodeComponentMissingDir(t *testing.T) {
 
 func TestDeployNodeComponentDownloadError(t *testing.T) {
 	withRuntimeStubs(t)
-	err := deployNodeComponent(t.TempDir(), "repo", "comp", "terragrunt", "npm", "/tmp/node/bin", func(dir string) error {
+	err := deployNodeComponent(newTestInstallState(t), t.TempDir(), "repo", "comp", "terragrunt", "npm", "/tmp/node/bin", func(dir string) error {
 		return errors.New("download failed")
 	}, map[string]string{}, 0, false)
 	if err == nil || err.Error() != "failed to download comp: download failed" {
@@ -400,7 +408,7 @@ func TestDeployNodeComponentSubmoduleError(t *testing.T) {
 		}
 		return nil
 	}
-	err := deployNodeComponent(infraDir, "repo", "comp", "terragrunt", "npm", "/tmp/node/bin", func(dir string) error { return nil }, map[string]string{}, 1, true)
+	err := deployNodeComponent(newTestInstallState(t), infraDir, "repo", "comp", "terragrunt", "npm", "/tmp/node/bin", func(dir string) error { return nil }, map[string]string{}, 1, true)
 	if err == nil || err.Error() != "git submodule update failed: submodule failed" {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -418,7 +426,7 @@ func TestDeployNodeComponentTerragruntError(t *testing.T) {
 		}
 		return nil
 	}
-	err := deployNodeComponent(infraDir, "repo", "comp", "terragrunt", "npm", "/tmp/node/bin", func(dir string) error { return nil }, map[string]string{}, 0, false)
+	err := deployNodeComponent(newTestInstallState(t), infraDir, "repo", "comp", "terragrunt", "npm", "/tmp/node/bin", func(dir string) error { return nil }, map[string]string{}, 0, false)
 	if err == nil || err.Error() != "terragrunt apply comp failed: apply failed" {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -436,7 +444,7 @@ func TestDeployNodeComponentBuildError(t *testing.T) {
 		}
 		return nil
 	}
-	err := deployNodeComponent(infraDir, "repo", "comp", "terragrunt", "npm", "/tmp/node/bin", func(dir string) error { return nil }, map[string]string{}, 1, false)
+	err := deployNodeComponent(newTestInstallState(t), infraDir, "repo", "comp", "terragrunt", "npm", "/tmp/node/bin", func(dir string) error { return nil }, map[string]string{}, 1, false)
 	if err == nil || err.Error() != "npm install failed: install failed" {
 		t.Fatalf("unexpected error: %v", err)
 	}
