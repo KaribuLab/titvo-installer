@@ -143,7 +143,7 @@ func askForPromptInput(awsRegion string) (*SetupConfig, error) {
 	if err != nil {
 		printErrorAndExit(err)
 	}
-	awsSessionToken, err = askForPassword("Enter your AWS Session Token", "AWS Session Token")
+	awsSessionToken, err = askForOptionalPassword("Enter your AWS Session Token (optional)", "AWS Session Token")
 	if err != nil {
 		printErrorAndExit(err)
 	}

@@ -181,6 +181,16 @@ func askForPassword(question string, inputName string) (string, error) {
 	return strings.TrimSpace(string(answer)), nil
 }
 
+func askForOptionalPassword(question string, inputName string) (string, error) {
+	printAskQuestion(fmt.Sprintf("%s: ", question))
+	answer, err := term.ReadPassword(int(os.Stdin.Fd()))
+	if err != nil {
+		printError(fmt.Errorf("error reading %s: %v", inputName, err))
+		return "", err
+	}
+	return strings.TrimSpace(string(answer)), nil
+}
+
 func askForYesNo(question string) (bool, error) {
 	printAskQuestion(question)
 	reader := bufio.NewReader(os.Stdin)
