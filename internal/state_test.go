@@ -149,6 +149,105 @@ func TestRepoDirNameFromURL(t *testing.T) {
 	}
 }
 
+func TestModuleStateResetDownstream(t *testing.T) {
+	m := &moduleState{
+		Built:      true,
+		AppliedECR: true,
+		Applied:    true,
+		Submitted:  true,
+		Destroyed:  true,
+		Cloned:     true,
+		Commit:     "abc123",
+	}
+	m.resetDownstream()
+	if m.Built || m.AppliedECR || m.Applied || m.Submitted || m.Destroyed {
+		t.Fatalf("expected downstream flags cleared, got %+v", m)
+	}
+	if !m.Cloned || m.Commit != "abc123" {
+		t.Fatalf("expected cloned and commit preserved, got %+v", m)
+	}
+}
+
+func TestInstallStateCommitPersistence(t *testing.T) {
+	titvoDir := t.TempDir()
+	state, err := loadInstallState(titvoDir)
+	if err != nil {
+		t.Fatalf("load failed: %v", err)
+	}
+	m := state.module("titvo-task-trigger-aws")
+	m.Cloned = true
+	m.Commit = "deadbeef1234567890"
+	if err := state.save(); err != nil {
+		t.Fatalf("save failed: %v", err)
+	}
+
+	reloaded, err := loadInstallState(titvoDir)
+	if err != nil {
+		t.Fatalf("reload failed: %v", err)
+	}
+	got := reloaded.module("titvo-task-trigger-aws")
+	if got.Commit != "deadbeef1234567890" {
+		t.Fatalf("unexpected commit: %s", got.Commit)
+	}
+}
+
+func TestEnsureModuleSourceUpToDateSkipsDownload(t *testing.T) {
+	withRuntimeStubs(t)
+	state := newTestInstallState(t)
+	infraDir := t.TempDir()
+	m := state.module("titvo-task-trigger-aws")
+	m.Cloned = true
+	m.Commit = "testsha"
+
+	downloads := 0
+	err := ensureModuleSource(state, infraDir, "titvo-task-trigger-aws", "task trigger", titvoTaskTriggerSource, func(dir string) error {
+		downloads++
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if downloads != 0 {
+		t.Fatalf("expected no download when up to date, got %d", downloads)
+	}
+}
+
+func TestEnsureModuleSourceRemoteChangedRefreshesAndResets(t *testing.T) {
+	withRuntimeStubs(t)
+	state := newTestInstallState(t)
+	infraDir := t.TempDir()
+	m := state.module("titvo-task-trigger-aws")
+	m.Cloned = true
+	m.Commit = "oldsha"
+	m.Built = true
+	m.Applied = true
+
+	gitOutputFn = func(dir string, args ...string) (string, error) {
+		if len(args) > 0 && args[0] == "ls-remote" {
+			return "newsha\tHEAD", nil
+		}
+		return "newsha", nil
+	}
+
+	downloads := 0
+	err := ensureModuleSource(state, infraDir, "titvo-task-trigger-aws", "task trigger", titvoTaskTriggerSource, func(dir string) error {
+		downloads++
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if downloads != 1 {
+		t.Fatalf("expected one refresh download, got %d", downloads)
+	}
+	if m.Commit != "newsha" {
+		t.Fatalf("expected commit updated to newsha, got %s", m.Commit)
+	}
+	if m.Built || m.Applied {
+		t.Fatalf("expected downstream flags reset, got built=%v applied=%v", m.Built, m.Applied)
+	}
+}
+
 func TestDeployInfraResumesFromSavedState(t *testing.T) {
 	withRuntimeStubs(t)
 	titvoDir := t.TempDir()

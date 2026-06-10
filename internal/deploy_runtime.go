@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path"
 	"strings"
 )
@@ -24,6 +25,7 @@ var getParameterFn = GetParameter
 var submitBatchJobFn = SubmitBatchJob
 var putRecordFn = PutRecord
 var mkdirAllFn = os.MkdirAll
+var gitOutputFn = gitOutput
 
 // repoDirNameFromURL derives the directory name git clone would create from a
 // repository URL (the base name without the .git suffix).
@@ -45,16 +47,79 @@ func downloadSource(dir, sourceURL, component string) error {
 	return err
 }
 
-// cloneModule downloads a module into infraDir unless it has already been
-// cloned according to the install state.
-func cloneModule(state *installState, infraDir, module, label string, downloadFn func(string) error) error {
+func gitOutput(dir string, args ...string) (string, error) {
+	cmd := exec.Command("git", args...)
+	if dir != "" {
+		cmd.Dir = dir
+	}
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+func localHeadCommit(dir string) string {
+	commit, err := gitOutputFn(dir, "rev-parse", "HEAD")
+	if err != nil {
+		return ""
+	}
+	return commit
+}
+
+func remoteHeadCommit(sourceURL string) (string, error) {
+	out, err := gitOutputFn("", "ls-remote", sourceURL, "HEAD")
+	if err != nil {
+		return "", err
+	}
+	fields := strings.Fields(out)
+	if len(fields) == 0 {
+		return "", fmt.Errorf("no HEAD ref for %s", sourceURL)
+	}
+	return fields[0], nil
+}
+
+// ensureModuleSource clones or refreshes a module source tree. On resume it
+// compares the stored commit against the remote HEAD; when the remote changed,
+// it re-clones cleanly and resets downstream build/deploy flags.
+func ensureModuleSource(state *installState, infraDir, module, label, sourceURL string, downloadFn func(string) error) error {
 	m := state.module(module)
-	return runOnce(state, &m.Cloned, fmt.Sprintf("Skipping download of %s (already cloned)", label), func() error {
+	sourceDir := path.Join(infraDir, module)
+
+	if !m.Cloned {
 		if err := downloadFn(infraDir); err != nil {
 			return fmt.Errorf("failed to download %s: %w", label, err)
 		}
+		m.Cloned = true
+		m.Commit = localHeadCommit(sourceDir)
+		return state.save()
+	}
+
+	remoteCommit, err := remoteHeadCommit(sourceURL)
+	if err != nil {
+		printAskQuestion(fmt.Sprintf("Warning: could not check remote for %s: %v. Using existing clone.", label, err))
 		return nil
-	})
+	}
+
+	if m.Commit != "" && m.Commit == remoteCommit {
+		printInfo(fmt.Sprintf("%s is up to date (commit %s)", label, shortCommit(m.Commit)))
+		return nil
+	}
+
+	printInfo(fmt.Sprintf("Refreshing %s: remote commit changed", label))
+	if err := downloadFn(infraDir); err != nil {
+		return fmt.Errorf("failed to refresh %s: %w", label, err)
+	}
+	m.Commit = localHeadCommit(sourceDir)
+	m.resetDownstream()
+	return state.save()
+}
+
+func shortCommit(commit string) string {
+	if len(commit) <= 12 {
+		return commit
+	}
+	return commit[:12]
 }
 
 func ensureDirExists(dir, errMsg string) error {
@@ -139,8 +204,8 @@ func deployNodeComponentFromSource(state *installState, module, sourceDir, label
 	return deployTerraformComponentFromSource(state, module, sourceDir, label, terragruntPath, env)
 }
 
-func deployNodeComponent(state *installState, infraDir, repoDirName, label, terragruntPath, npmPath, nodeBinDir string, downloadFn func(string) error, env map[string]string, buildRepeats int, needsSubmodules bool) error {
-	if err := cloneModule(state, infraDir, repoDirName, label, downloadFn); err != nil {
+func deployNodeComponent(state *installState, infraDir, repoDirName, label, sourceURL, terragruntPath, npmPath, nodeBinDir string, downloadFn func(string) error, env map[string]string, buildRepeats int, needsSubmodules bool) error {
+	if err := ensureModuleSource(state, infraDir, repoDirName, label, sourceURL, downloadFn); err != nil {
 		return err
 	}
 
@@ -163,7 +228,7 @@ func deployInfra(config DeployConfig) error {
 	}
 
 	const infraModule = "titvo-security-scan-infra-aws"
-	if err := cloneModule(state, infraDir, infraModule, "infra", DownloadInfraSource); err != nil {
+	if err := ensureModuleSource(state, infraDir, infraModule, "infra", titvoInfraSource, DownloadInfraSource); err != nil {
 		return err
 	}
 
@@ -319,12 +384,12 @@ func deployInfra(config DeployConfig) error {
 		}
 	}
 
-	if err := deployNodeComponent(state, infraDir, "titvo-git-commit-files-aws", "git commit files aws", terragruntPath, npmPath, nodeBinDir, DownloadGitCommitFilesAWSSource, env, 1, true); err != nil {
+	if err := deployNodeComponent(state, infraDir, "titvo-git-commit-files-aws", "git commit files aws", titvoGitCommitFilesAWS, terragruntPath, npmPath, nodeBinDir, DownloadGitCommitFilesAWSSource, env, 1, true); err != nil {
 		return err
 	}
 
 	const agentModule = "titvo-agent-aws"
-	if err := cloneModule(state, infraDir, agentModule, "agent aws", DownloadAgentAWSSource); err != nil {
+	if err := ensureModuleSource(state, infraDir, agentModule, "agent aws", titvoAgentAWS, DownloadAgentAWSSource); err != nil {
 		return err
 	}
 	agentSourceDir := path.Join(infraDir, agentModule)
@@ -341,7 +406,7 @@ func deployInfra(config DeployConfig) error {
 	}
 
 	const mcpGatewayModule = "titvo-mcp-gateway"
-	if err := cloneModule(state, infraDir, mcpGatewayModule, "MCP gateway", DownloadMCPGatewaySource); err != nil {
+	if err := ensureModuleSource(state, infraDir, mcpGatewayModule, "MCP gateway", titvoMCPGateway, DownloadMCPGatewaySource); err != nil {
 		return err
 	}
 	mcpGatewaySourceDir := path.Join(infraDir, mcpGatewayModule)
@@ -358,7 +423,7 @@ func deployInfra(config DeployConfig) error {
 	}
 
 	const ragIndexerModule = "titvo-rag-indexer"
-	if err := cloneModule(state, infraDir, ragIndexerModule, "rag indexer", DownloadRagIndexerSource); err != nil {
+	if err := ensureModuleSource(state, infraDir, ragIndexerModule, "rag indexer", titvoRagIndexerSource, DownloadRagIndexerSource); err != nil {
 		return err
 	}
 	ragIndexerSourceDir := path.Join(infraDir, ragIndexerModule)
@@ -375,7 +440,7 @@ func deployInfra(config DeployConfig) error {
 	}
 
 	const ecrPublisherModule = "titvo-installer-ecr-publisher"
-	if err := cloneModule(state, infraDir, ecrPublisherModule, "installer ecr publisher", DownloadInstallerECRPublisherSource); err != nil {
+	if err := ensureModuleSource(state, infraDir, ecrPublisherModule, "installer ecr publisher", titvoInstallerECRPublisherSource, DownloadInstallerECRPublisherSource); err != nil {
 		return err
 	}
 	ecrPublisherSource := path.Join(infraDir, ecrPublisherModule)
@@ -427,32 +492,35 @@ func deployInfra(config DeployConfig) error {
 	reportingComponents := []struct {
 		repoDirName    string
 		label          string
+		sourceURL      string
 		downloadFn     func(string) error
 		buildRepeat    int
 		needsSubmodule bool
 	}{
-		{repoDirName: "titvo-issue-report-aws", label: "issue report aws", downloadFn: DownloadIssueReportAWSSource, buildRepeat: 1, needsSubmodule: true},
+		{repoDirName: "titvo-issue-report-aws", label: "issue report aws", sourceURL: titvoIssueReportAWS, downloadFn: DownloadIssueReportAWSSource, buildRepeat: 1, needsSubmodule: true},
 	}
 	if config.BitbucketAPIToken != "" {
 		reportingComponents = append(reportingComponents, struct {
 			repoDirName    string
 			label          string
+			sourceURL      string
 			downloadFn     func(string) error
 			buildRepeat    int
 			needsSubmodule bool
-		}{repoDirName: "titvo-bitbucket-code-insights-aws", label: "bitbucket code insights aws", downloadFn: DownloadBitbucketCodeInsightsAWSSource, buildRepeat: 1, needsSubmodule: true})
+		}{repoDirName: "titvo-bitbucket-code-insights-aws", label: "bitbucket code insights aws", sourceURL: titvoBitbucketCodeInsightsAWS, downloadFn: DownloadBitbucketCodeInsightsAWSSource, buildRepeat: 1, needsSubmodule: true})
 	}
 	if config.GithubAccessToken != "" {
 		reportingComponents = append(reportingComponents, struct {
 			repoDirName    string
 			label          string
+			sourceURL      string
 			downloadFn     func(string) error
 			buildRepeat    int
 			needsSubmodule bool
-		}{repoDirName: "titvo-github-issue-aws", label: "github issue aws", downloadFn: DownloadGithubIssueAWSSource, buildRepeat: 1, needsSubmodule: true})
+		}{repoDirName: "titvo-github-issue-aws", label: "github issue aws", sourceURL: titvoGithubIssueAWS, downloadFn: DownloadGithubIssueAWSSource, buildRepeat: 1, needsSubmodule: true})
 	}
 	for _, component := range reportingComponents {
-		if err := deployNodeComponent(state, infraDir, component.repoDirName, component.label, terragruntPath, npmPath, nodeBinDir, component.downloadFn, env, component.buildRepeat, component.needsSubmodule); err != nil {
+		if err := deployNodeComponent(state, infraDir, component.repoDirName, component.label, component.sourceURL, terragruntPath, npmPath, nodeBinDir, component.downloadFn, env, component.buildRepeat, component.needsSubmodule); err != nil {
 			return err
 		}
 	}
@@ -472,17 +540,18 @@ func deployInfra(config DeployConfig) error {
 	coreComponents := []struct {
 		repoDirName    string
 		label          string
+		sourceURL      string
 		downloadFn     func(string) error
 		buildRepeats   int
 		needsSubmodule bool
 	}{
-		{repoDirName: "titvo-auth-setup-aws", label: "auth setup", downloadFn: DownloadAuthSetupSource, buildRepeats: 1, needsSubmodule: true},
-		{repoDirName: "titvo-task-cli-files-aws", label: "task cli files", downloadFn: DownloadTaskCliFilesSource, buildRepeats: 1, needsSubmodule: true},
-		{repoDirName: "titvo-task-trigger-aws", label: "task trigger", downloadFn: DownloadTaskTriggerSource, buildRepeats: 1, needsSubmodule: true},
-		{repoDirName: "titvo-task-status-aws", label: "task status", downloadFn: DownloadTaskStatusSource, buildRepeats: 1, needsSubmodule: true},
+		{repoDirName: "titvo-auth-setup-aws", label: "auth setup", sourceURL: titvoAuthSetupSource, downloadFn: DownloadAuthSetupSource, buildRepeats: 1, needsSubmodule: true},
+		{repoDirName: "titvo-task-cli-files-aws", label: "task cli files", sourceURL: titvoTaskCliFilesSource, downloadFn: DownloadTaskCliFilesSource, buildRepeats: 1, needsSubmodule: true},
+		{repoDirName: "titvo-task-trigger-aws", label: "task trigger", sourceURL: titvoTaskTriggerSource, downloadFn: DownloadTaskTriggerSource, buildRepeats: 1, needsSubmodule: true},
+		{repoDirName: "titvo-task-status-aws", label: "task status", sourceURL: titvoTaskStatusSource, downloadFn: DownloadTaskStatusSource, buildRepeats: 1, needsSubmodule: true},
 	}
 	for _, component := range coreComponents {
-		if err := deployNodeComponent(state, infraDir, component.repoDirName, component.label, terragruntPath, npmPath, nodeBinDir, component.downloadFn, env, component.buildRepeats, component.needsSubmodule); err != nil {
+		if err := deployNodeComponent(state, infraDir, component.repoDirName, component.label, component.sourceURL, terragruntPath, npmPath, nodeBinDir, component.downloadFn, env, component.buildRepeats, component.needsSubmodule); err != nil {
 			return err
 		}
 	}

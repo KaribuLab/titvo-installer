@@ -13,12 +13,23 @@ const installStateFileName = "install-state.json"
 // Each field uses omitempty so the persisted file only shows the steps that are
 // relevant for a given module (e.g. ECR-only phases or node build steps).
 type moduleState struct {
-	Cloned     bool `json:"cloned,omitempty"`
-	Built      bool `json:"built,omitempty"`
-	AppliedECR bool `json:"applied_ecr,omitempty"`
-	Applied    bool `json:"applied,omitempty"`
-	Submitted  bool `json:"submitted,omitempty"`
-	Destroyed  bool `json:"destroyed,omitempty"`
+	Cloned     bool   `json:"cloned,omitempty"`
+	Commit     string `json:"commit,omitempty"`
+	Built      bool   `json:"built,omitempty"`
+	AppliedECR bool   `json:"applied_ecr,omitempty"`
+	Applied    bool   `json:"applied,omitempty"`
+	Submitted  bool   `json:"submitted,omitempty"`
+	Destroyed  bool   `json:"destroyed,omitempty"`
+}
+
+// resetDownstream clears build and deploy flags so a refreshed clone is
+// rebuilt and re-applied. Cloned and Commit are left intact.
+func (m *moduleState) resetDownstream() {
+	m.Built = false
+	m.AppliedECR = false
+	m.Applied = false
+	m.Submitted = false
+	m.Destroyed = false
 }
 
 // installState is the persisted progress of an installation run. It lives in
