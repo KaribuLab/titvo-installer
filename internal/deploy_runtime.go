@@ -95,18 +95,34 @@ func ensureModuleSource(state *installState, infraDir, module, label, sourceURL 
 		return state.save()
 	}
 
+	localCommit := m.Commit
+	if localCommit == "" {
+		if _, err := os.Stat(sourceDir); err == nil {
+			localCommit = localHeadCommit(sourceDir)
+		}
+	}
+
 	remoteCommit, err := remoteHeadCommit(sourceURL)
 	if err != nil {
 		printAskQuestion(fmt.Sprintf("Warning: could not check remote for %s: %v. Using existing clone.", label, err))
 		return nil
 	}
 
-	if m.Commit != "" && m.Commit == remoteCommit {
+	if localCommit == "" {
+		printAskQuestion(fmt.Sprintf("Warning: could not determine local commit for %s. Using existing clone without refresh.", label))
+		return nil
+	}
+
+	if localCommit == remoteCommit {
+		if m.Commit != localCommit {
+			m.Commit = localCommit
+			return state.save()
+		}
 		printInfo(fmt.Sprintf("%s is up to date (commit %s)", label, shortCommit(m.Commit)))
 		return nil
 	}
 
-	printInfo(fmt.Sprintf("Refreshing %s: remote commit changed", label))
+	printInfo(fmt.Sprintf("Refreshing %s: remote commit changed (%s -> %s)", label, shortCommit(localCommit), shortCommit(remoteCommit)))
 	if err := downloadFn(infraDir); err != nil {
 		return fmt.Errorf("failed to refresh %s: %w", label, err)
 	}

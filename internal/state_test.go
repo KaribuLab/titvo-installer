@@ -212,6 +212,37 @@ func TestEnsureModuleSourceUpToDateSkipsDownload(t *testing.T) {
 	}
 }
 
+func TestEnsureModuleSourceLegacyStateBackfillsCommitWithoutReset(t *testing.T) {
+	withRuntimeStubs(t)
+	state := newTestInstallState(t)
+	infraDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(infraDir, "titvo-task-trigger-aws"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	m := state.module("titvo-task-trigger-aws")
+	m.Cloned = true
+	m.Applied = true
+	m.Built = true
+
+	downloads := 0
+	err := ensureModuleSource(state, infraDir, "titvo-task-trigger-aws", "task trigger", titvoTaskTriggerSource, func(dir string) error {
+		downloads++
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if downloads != 0 {
+		t.Fatalf("expected no download when legacy state matches remote, got %d", downloads)
+	}
+	if m.Commit != "testsha" {
+		t.Fatalf("expected commit backfilled to testsha, got %s", m.Commit)
+	}
+	if !m.Applied || !m.Built {
+		t.Fatalf("expected downstream flags preserved, got built=%v applied=%v", m.Built, m.Applied)
+	}
+}
+
 func TestEnsureModuleSourceRemoteChangedRefreshesAndResets(t *testing.T) {
 	withRuntimeStubs(t)
 	state := newTestInstallState(t)
