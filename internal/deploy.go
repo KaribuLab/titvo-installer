@@ -13,6 +13,8 @@ const titvoGithubIssueAWS = "https://github.com/KaribuLab/titvo-github-issue-aws
 const titvoIssueReportAWS = "https://github.com/KaribuLab/titvo-issue-report-aws.git"
 const titvoInstallerECRPublisherSource = "https://github.com/KaribuLab/titvo-installer-ecr-publisher.git"
 const titvoRagIndexerSource = "https://github.com/KaribuLab/titvo-rag-indexer.git"
+const titvoAdminBffSource = "https://github.com/KaribuLab/titvo-admin-bff-aws.git"
+const titvoAdminWebSource = "https://github.com/KaribuLab/titvo-admin-web.git"
 
 type batchJobSpec struct {
 	Name    string
@@ -101,6 +103,14 @@ func DownloadInstallerECRPublisherSource(dir string) error {
 
 func DownloadRagIndexerSource(dir string) error {
 	return downloadSourceFn(dir, titvoRagIndexerSource, "rag indexer")
+}
+
+func DownloadAdminBffSource(dir string) error {
+	return downloadSourceFn(dir, titvoAdminBffSource, "admin bff")
+}
+
+func DownloadAdminWebSource(dir string) error {
+	return downloadSourceFn(dir, titvoAdminWebSource, "admin web")
 }
 
 type DeployConfig struct {

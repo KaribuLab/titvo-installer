@@ -35,6 +35,9 @@ func successfulDeployStubs() {
 	putRecordFn = func(creds *AWSCredentials, tableName string, item map[string]interface{}) error {
 		return nil
 	}
+	syncStaticAssetsFn = func(deployer staticSiteDeployer, buildDir, bucketName, distributionID string) error {
+		return nil
+	}
 }
 
 func validDeployConfig(titvoDir string) DeployConfig {
@@ -74,6 +77,7 @@ func withRuntimeStubs(t *testing.T) {
 	origDownload := downloadSourceFn
 	origMkdirAll := mkdirAllFn
 	origGitOutput := gitOutputFn
+	origSync := syncStaticAssetsFn
 
 	logConfiguredToolBinariesFn = func(config InstallToolConfig) error { return nil }
 	gitOutputFn = func(dir string, args ...string) (string, error) {
@@ -95,6 +99,7 @@ func withRuntimeStubs(t *testing.T) {
 		downloadSourceFn = origDownload
 		mkdirAllFn = origMkdirAll
 		gitOutputFn = origGitOutput
+		syncStaticAssetsFn = origSync
 	})
 }
 
@@ -125,6 +130,8 @@ func createRequiredInfraDirs(t *testing.T, titvoDir string) {
 		"infra/titvo-git-commit-files-aws/aws",
 		"infra/titvo-github-issue-aws/aws",
 		"infra/titvo-issue-report-aws/aws",
+		"infra/titvo-admin-bff-aws/aws",
+		"infra/titvo-admin-web/aws",
 	}
 
 	for _, p := range paths {
@@ -297,6 +304,189 @@ func TestDeployInfraSuccess(t *testing.T) {
 	}
 	if mcpRanSubmodule {
 		t.Fatalf("expected MCP gateway flow to skip git submodule update")
+	}
+}
+
+func TestDeployInfraDeploysAdminConsoleComponentsAfterAuth(t *testing.T) {
+	withRuntimeStubs(t)
+	titvoDir := t.TempDir()
+	createRequiredInfraDirs(t, titvoDir)
+
+	successfulDeployStubs()
+	terragruntApplyDirs := []string{}
+	npmBuildDirs := []string{}
+	executeWithOptionsFn = func(command string, options *ExecuteOptions, args ...string) error {
+		if isTerragruntCommand(command) && options != nil && len(args) > 1 && args[0] == "run-all" && args[1] == "apply" {
+			terragruntApplyDirs = append(terragruntApplyDirs, options.WorkingDir)
+		}
+		if filepath.Base(command) == "npm" && options != nil && len(args) > 0 && args[0] == "run" {
+			npmBuildDirs = append(npmBuildDirs, options.WorkingDir)
+		}
+		return nil
+	}
+
+	origSync := syncStaticAssetsFn
+	syncCalledWithBucket := ""
+	syncCalledWithDistribution := ""
+	syncStaticAssetsFn = func(deployer staticSiteDeployer, buildDir, bucketName, distributionID string) error {
+		syncCalledWithBucket = bucketName
+		syncCalledWithDistribution = distributionID
+		return nil
+	}
+	t.Cleanup(func() { syncStaticAssetsFn = origSync })
+
+	getParameterFn = func(creds *AWSCredentials, path string) (string, error) {
+		switch path {
+		case "/tvo/security-scan/prod/infra/ecr/publisher/job_definition_arn":
+			return "job-def", nil
+		case "/tvo/security-scan/prod/infra/ecr/publisher/job_queue_arn":
+			return "job-queue", nil
+		case adminWebBucketNameParam:
+			return "admin-web-bucket", nil
+		case adminWebDistributionIDParam:
+			return "DIST_ADMIN_WEB", nil
+		default:
+			t.Fatalf("unexpected getParameterFn call for path: %s", path)
+			return "", nil
+		}
+	}
+
+	err := deployInfra(validDeployConfig(titvoDir))
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	findDirIndex := func(dirs []string, target string) int {
+		for i, dir := range dirs {
+			if dir == target {
+				return i
+			}
+		}
+		return -1
+	}
+
+	authDir := filepath.Join(titvoDir, "infra", "titvo-auth-setup-aws", "aws")
+	adminBffDir := filepath.Join(titvoDir, "infra", "titvo-admin-bff-aws", "aws")
+	adminWebDir := filepath.Join(titvoDir, "infra", "titvo-admin-web", "aws")
+
+	authIndex := findDirIndex(terragruntApplyDirs, authDir)
+	adminBffIndex := findDirIndex(terragruntApplyDirs, adminBffDir)
+	adminWebIndex := findDirIndex(terragruntApplyDirs, adminWebDir)
+
+	if authIndex == -1 {
+		t.Fatalf("expected auth setup apply to run")
+	}
+	if adminBffIndex == -1 {
+		t.Fatalf("expected admin bff apply to run")
+	}
+	if adminWebIndex == -1 {
+		t.Fatalf("expected admin web apply to run")
+	}
+	if adminBffIndex <= authIndex {
+		t.Fatalf("expected admin bff apply to run after auth setup apply")
+	}
+	if adminWebIndex <= authIndex {
+		t.Fatalf("expected admin web apply to run after auth setup apply")
+	}
+
+	adminWebSourceDir := filepath.Join(titvoDir, "infra", "titvo-admin-web")
+	buildRan := false
+	for _, dir := range npmBuildDirs {
+		if dir == adminWebSourceDir {
+			buildRan = true
+		}
+	}
+	if !buildRan {
+		t.Fatalf("expected npm build to run in %s, got dirs: %v", adminWebSourceDir, npmBuildDirs)
+	}
+
+	if syncCalledWithBucket != "admin-web-bucket" {
+		t.Fatalf("expected sync to use bucket 'admin-web-bucket', got %s", syncCalledWithBucket)
+	}
+	if syncCalledWithDistribution != "DIST_ADMIN_WEB" {
+		t.Fatalf("expected sync to use distribution 'DIST_ADMIN_WEB', got %s", syncCalledWithDistribution)
+	}
+}
+
+func TestDeployInfraAdminWebSyncSkippedWhenAlreadySynced(t *testing.T) {
+	withRuntimeStubs(t)
+	titvoDir := t.TempDir()
+	createRequiredInfraDirs(t, titvoDir)
+
+	successfulDeployStubs()
+	getParameterFn = func(creds *AWSCredentials, path string) (string, error) {
+		switch path {
+		case "/tvo/security-scan/prod/infra/ecr/publisher/job_definition_arn":
+			return "job-def", nil
+		case "/tvo/security-scan/prod/infra/ecr/publisher/job_queue_arn":
+			return "job-queue", nil
+		case adminWebBucketNameParam:
+			return "admin-web-bucket", nil
+		case adminWebDistributionIDParam:
+			return "DIST_ADMIN_WEB", nil
+		default:
+			return "job-queue", nil
+		}
+	}
+
+	origSync := syncStaticAssetsFn
+	syncCalls := 0
+	syncStaticAssetsFn = func(deployer staticSiteDeployer, buildDir, bucketName, distributionID string) error {
+		syncCalls++
+		return nil
+	}
+	t.Cleanup(func() { syncStaticAssetsFn = origSync })
+
+	state := newTestInstallState(t)
+	m := state.module("titvo-admin-web")
+	m.Cloned = true
+	m.Commit = "testsha"
+	m.Applied = true
+	m.Built = true
+	m.Synced = true
+	if err := state.save(); err != nil {
+		t.Fatal(err)
+	}
+
+	config := validDeployConfig(titvoDir)
+	err := deployStaticSiteComponent(state, &config.AWSCredentials, filepath.Join(titvoDir, "infra"), "titvo-admin-web", "admin web", titvoAdminWebSource, "terragrunt", "npm", "/tmp/node/bin", func(dir string) error { return nil }, map[string]string{}, 1)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if syncCalls != 0 {
+		t.Fatalf("expected sync to be skipped when already synced, got %d calls", syncCalls)
+	}
+}
+
+func TestDeployStaticSiteComponentPropagatesSyncError(t *testing.T) {
+	withRuntimeStubs(t)
+	titvoDir := t.TempDir()
+	infraDir := filepath.Join(titvoDir, "infra")
+	if err := os.MkdirAll(filepath.Join(infraDir, "titvo-admin-web", "aws"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	successfulDeployStubs()
+	getParameterFn = func(creds *AWSCredentials, path string) (string, error) {
+		switch path {
+		case adminWebBucketNameParam:
+			return "admin-web-bucket", nil
+		case adminWebDistributionIDParam:
+			return "DIST_ADMIN_WEB", nil
+		}
+		return "", nil
+	}
+	origSync := syncStaticAssetsFn
+	expectedErr := errors.New("sync failed")
+	syncStaticAssetsFn = func(deployer staticSiteDeployer, buildDir, bucketName, distributionID string) error {
+		return expectedErr
+	}
+	t.Cleanup(func() { syncStaticAssetsFn = origSync })
+
+	creds := &AWSCredentials{AWSRegion: "us-east-1"}
+	err := deployStaticSiteComponent(newTestInstallState(t), creds, infraDir, "titvo-admin-web", "admin web", titvoAdminWebSource, "terragrunt", "npm", "/tmp/node/bin", func(dir string) error { return nil }, map[string]string{}, 0)
+	if err == nil || !errors.Is(err, expectedErr) {
+		t.Fatalf("expected wrapped sync error, got %v", err)
 	}
 }
 

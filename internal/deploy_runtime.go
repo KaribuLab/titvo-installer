@@ -26,6 +26,22 @@ var submitBatchJobFn = SubmitBatchJob
 var putRecordFn = PutRecord
 var mkdirAllFn = os.MkdirAll
 var gitOutputFn = gitOutput
+var syncStaticAssetsFn = deployStaticAssets
+
+// adminWebBuildOutputDir is Vite's default build output directory —
+// titvo-admin-web was scaffolded with no vite.config.ts override (see
+// sdd/titvo-admin-console apply-progress, Phase 4 batch 1).
+const adminWebBuildOutputDir = "dist"
+
+// Admin console static site SSM parameter paths. Every other cross-stack
+// value this installer reads (api_gateway_id, encryption-key-arn, ecr
+// publisher job_definition_arn/job_queue_arn) flows through SSM parameters
+// exported by the producing Terragrunt stack's own aws/parameter step, never
+// through `terraform output` — titvo-admin-web's S3+CloudFront module
+// follows the same convention.
+const adminWebBucketNameParam = "/tvo/security-scan/prod/infra/s3/admin-web/bucket_name"
+const adminWebDistributionIDParam = "/tvo/security-scan/prod/infra/cloudfront/admin-web/distribution_id"
+const adminWebDomainNameParam = "/tvo/security-scan/prod/infra/cloudfront/admin-web/domain_name"
 
 // repoDirNameFromURL derives the directory name git clone would create from a
 // repository URL (the base name without the .git suffix).
@@ -227,6 +243,49 @@ func deployNodeComponent(state *installState, infraDir, repoDirName, label, sour
 
 	sourceDir := path.Join(infraDir, repoDirName)
 	return deployNodeComponentFromSource(state, repoDirName, sourceDir, label, terragruntPath, npmPath, nodeBinDir, env, buildRepeats, needsSubmodules)
+}
+
+// deployStaticSiteComponent deploys a static SPA component (S3 + CloudFront,
+// no Lambda). Unlike deployNodeComponent, the app itself is never handed to
+// Terraform/Lambda: terragrunt apply only provisions the bucket and
+// distribution, npm build produces the static assets, and those assets are
+// then published directly to the provisioned bucket via the AWS SDK before
+// invalidating the distribution so the new build is served immediately.
+func deployStaticSiteComponent(state *installState, creds *AWSCredentials, infraDir, repoDirName, label, sourceURL, terragruntPath, npmPath, nodeBinDir string, downloadFn func(string) error, env map[string]string, buildRepeats int) error {
+	if err := ensureModuleSource(state, infraDir, repoDirName, label, sourceURL, downloadFn); err != nil {
+		return err
+	}
+
+	sourceDir := path.Join(infraDir, repoDirName)
+	if err := deployTerraformComponentFromSource(state, repoDirName, sourceDir, label, terragruntPath, env); err != nil {
+		return err
+	}
+
+	m := state.module(repoDirName)
+	if err := runOnce(state, &m.Built, fmt.Sprintf("Skipping build of %s (already built)", label), func() error {
+		return runBuild(sourceDir, npmPath, nodeBinDir, buildRepeats)
+	}); err != nil {
+		return err
+	}
+
+	return runOnce(state, &m.Synced, fmt.Sprintf("Skipping asset sync of %s (already synced)", label), func() error {
+		bucketName, err := getParameterFn(creds, adminWebBucketNameParam)
+		if err != nil {
+			return fmt.Errorf("failed to get %s bucket name: %w", label, err)
+		}
+		distributionID, err := getParameterFn(creds, adminWebDistributionIDParam)
+		if err != nil {
+			return fmt.Errorf("failed to get %s distribution id: %w", label, err)
+		}
+
+		buildDir := path.Join(sourceDir, adminWebBuildOutputDir)
+		deployer := &awsStaticSiteDeployer{creds: creds}
+		printInfo(fmt.Sprintf("Publishing %s static assets to s3://%s", label, bucketName))
+		if err := syncStaticAssetsFn(deployer, buildDir, bucketName, distributionID); err != nil {
+			return fmt.Errorf("failed to publish %s static assets: %w", label, err)
+		}
+		return nil
+	})
 }
 
 func deployInfra(config DeployConfig) error {
@@ -565,11 +624,16 @@ func deployInfra(config DeployConfig) error {
 		{repoDirName: "titvo-task-cli-files-aws", label: "task cli files", sourceURL: titvoTaskCliFilesSource, downloadFn: DownloadTaskCliFilesSource, buildRepeats: 1, needsSubmodule: true},
 		{repoDirName: "titvo-task-trigger-aws", label: "task trigger", sourceURL: titvoTaskTriggerSource, downloadFn: DownloadTaskTriggerSource, buildRepeats: 1, needsSubmodule: true},
 		{repoDirName: "titvo-task-status-aws", label: "task status", sourceURL: titvoTaskStatusSource, downloadFn: DownloadTaskStatusSource, buildRepeats: 1, needsSubmodule: true},
+		{repoDirName: "titvo-admin-bff-aws", label: "admin bff", sourceURL: titvoAdminBffSource, downloadFn: DownloadAdminBffSource, buildRepeats: 1, needsSubmodule: true},
 	}
 	for _, component := range coreComponents {
 		if err := deployNodeComponent(state, infraDir, component.repoDirName, component.label, component.sourceURL, terragruntPath, npmPath, nodeBinDir, component.downloadFn, env, component.buildRepeats, component.needsSubmodule); err != nil {
 			return err
 		}
+	}
+
+	if err := deployStaticSiteComponent(state, &config.AWSCredentials, infraDir, "titvo-admin-web", "admin web", titvoAdminWebSource, terragruntPath, npmPath, nodeBinDir, DownloadAdminWebSource, env, 1); err != nil {
+		return err
 	}
 
 	printInfo("Deployed all services")

@@ -17,9 +17,10 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.Flags().BoolP("debug", "d", false, "Enable debug mode")
 	rootCmd.Flags().StringP("config", "c", "", "Configuration file")
 
-	// Agregar subcomandos secret y parameter
+	// Agregar subcomandos secret, parameter y seed-admin
 	rootCmd.AddCommand(NewSecretCommand())
 	rootCmd.AddCommand(NewParameterCommand())
+	rootCmd.AddCommand(NewAdminSeedCommand())
 
 	return rootCmd
 }
@@ -46,6 +47,18 @@ func NewParameterCommand() *cobra.Command {
 	paramCmd.Flags().BoolP("debug", "d", false, "Enable debug mode")
 	paramCmd.Flags().StringP("config", "c", "", "Archivo de configuración con credenciales de AWS")
 	return paramCmd
+}
+
+func NewAdminSeedCommand() *cobra.Command {
+	adminSeedCmd := &cobra.Command{
+		Use:   "seed-admin",
+		Short: "Crea el primer usuario admin de la consola de administración",
+		Long:  "Crea el primer usuario con role=admin en la tabla de usuarios de Titvo, para acceder a la consola de administración. Es idempotente: si ya existe un admin, no crea uno nuevo.",
+		Run:   internal.RunAdminSeeder,
+	}
+	adminSeedCmd.Flags().BoolP("debug", "d", false, "Enable debug mode")
+	adminSeedCmd.Flags().StringP("config", "c", "", "Archivo de configuración con credenciales de AWS (y opcionalmente admin_email/admin_password)")
+	return adminSeedCmd
 }
 
 func main() {

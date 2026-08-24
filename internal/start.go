@@ -251,10 +251,19 @@ func runStartConfiguration(config *StartConfig) error {
 	if err != nil {
 		return err
 	}
+	// Admin console URL: the CloudFront domain fronting titvo-admin-web (see
+	// deploy_runtime.go's adminWebDomainNameParam). A missing/unreadable
+	// parameter here must not fail the whole setup summary — the admin
+	// console is deployed alongside everything else in DeployInfra, but a
+	// user who only cares about the User ID/API Key should still get them.
+	adminConsoleURL, adminConsoleErr := GetParameter(config.AWSCredentials, adminWebDomainNameParam)
 	printInfo("----------------------------------------------------------------")
 	printInfo(fmt.Sprintf("- Setup Endpoint: %s", setupEndpoint))
 	printInfo(fmt.Sprintf("- User ID: %s", userId))
 	printInfo(fmt.Sprintf("- API Key: %s", apiKey))
+	if adminConsoleErr == nil && adminConsoleURL != "" {
+		printInfo(fmt.Sprintf("- Admin Console: https://%s", adminConsoleURL))
+	}
 	printInfo("----------------------------------------------------------------")
 	printInfo("* Remember to keep your API Key and User ID in a safe place")
 	printInfo("----------------------------------------------------------------")
