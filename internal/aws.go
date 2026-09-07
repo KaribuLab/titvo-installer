@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -12,12 +13,17 @@ import (
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/batch"
 	batchtypes "github.com/aws/aws-sdk-go-v2/service/batch/types"
+	"github.com/aws/aws-sdk-go-v2/service/cloudfront"
+	cloudfronttypes "github.com/aws/aws-sdk-go-v2/service/cloudfront/types"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	dynamodbtypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	secretsmanagertypes "github.com/aws/aws-sdk-go-v2/service/secretsmanager/types"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	"github.com/aws/aws-sdk-go-v2/service/ssm/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
+	"github.com/google/uuid"
 )
 
 func (creds *AWSCredentials) getAWSConfig(ctx context.Context) (aws.Config, error) {
@@ -264,6 +270,46 @@ func PutRecord(creds *AWSCredentials, tableName string, item map[string]interfac
 	return nil
 }
 
+// ScanForItemWithValue reports whether at least one item in tableName has
+// attributeName equal to value, paginating through the whole table if
+// needed. It is used for coarse existence checks (e.g. "does an admin user
+// already exist") where no GSI covers the attribute being checked.
+func ScanForItemWithValue(creds *AWSCredentials, tableName, attributeName, value string) (bool, error) {
+	cfg, err := creds.getAWSConfig(context.TODO())
+	if err != nil {
+		return false, fmt.Errorf("error loading AWS configuration: %w", err)
+	}
+
+	client := dynamodb.NewFromConfig(cfg)
+
+	var exclusiveStartKey map[string]dynamodbtypes.AttributeValue
+	for {
+		input := &dynamodb.ScanInput{
+			TableName:                aws.String(tableName),
+			FilterExpression:         aws.String("#attr = :value"),
+			ExpressionAttributeNames: map[string]string{"#attr": attributeName},
+			ExpressionAttributeValues: map[string]dynamodbtypes.AttributeValue{
+				":value": &dynamodbtypes.AttributeValueMemberS{Value: value},
+			},
+			ExclusiveStartKey: exclusiveStartKey,
+		}
+
+		result, err := client.Scan(context.TODO(), input)
+		if err != nil {
+			return false, fmt.Errorf("error scanning table '%s': %w", tableName, err)
+		}
+
+		if len(result.Items) > 0 {
+			return true, nil
+		}
+
+		if len(result.LastEvaluatedKey) == 0 {
+			return false, nil
+		}
+		exclusiveStartKey = result.LastEvaluatedKey
+	}
+}
+
 // GetSecret obtiene el valor de un secreto desde AWS Secrets Manager
 func GetSecret(creds *AWSCredentials, secretName string) (string, error) {
 	cfg, err := creds.getAWSConfig(context.TODO())
@@ -287,4 +333,83 @@ func GetSecret(creds *AWSCredentials, secretName string) (string, error) {
 	}
 
 	return *result.SecretString, nil
+}
+
+// awsStaticSiteDeployer is the real AWS-backed implementation of
+// staticSiteDeployer (see static_site.go), used by deployStaticSiteComponent
+// to publish titvo-admin-web's build output to S3 and invalidate its
+// CloudFront distribution.
+type awsStaticSiteDeployer struct {
+	creds *AWSCredentials
+}
+
+func (d *awsStaticSiteDeployer) UploadFile(bucket, key, localPath, contentType string) error {
+	return UploadFileToS3(d.creds, bucket, key, localPath, contentType)
+}
+
+func (d *awsStaticSiteDeployer) InvalidateDistribution(distributionID string) error {
+	return InvalidateCloudFrontDistribution(d.creds, distributionID)
+}
+
+// UploadFileToS3 uploads a single local file to bucket/key. This is the
+// first S3 helper in this installer — no S3 upload path existed before the
+// admin console's static site publish step (Phase 5).
+func UploadFileToS3(creds *AWSCredentials, bucket, key, localPath, contentType string) error {
+	cfg, err := creds.getAWSConfig(context.TODO())
+	if err != nil {
+		return fmt.Errorf("error al cargar configuración de AWS: %w", err)
+	}
+
+	client := s3.NewFromConfig(cfg)
+
+	file, err := os.Open(localPath)
+	if err != nil {
+		return fmt.Errorf("error opening file '%s': %w", localPath, err)
+	}
+	defer file.Close()
+
+	input := &s3.PutObjectInput{
+		Bucket:      aws.String(bucket),
+		Key:         aws.String(key),
+		Body:        file,
+		ContentType: aws.String(contentType),
+	}
+
+	_, err = client.PutObject(context.TODO(), input)
+	if err != nil {
+		return fmt.Errorf("error uploading '%s' to s3://%s/%s: %w", localPath, bucket, key, err)
+	}
+
+	return nil
+}
+
+// InvalidateCloudFrontDistribution creates a "/*" invalidation on
+// distributionID so every newly-synced asset is served immediately instead
+// of waiting out CloudFront's cache TTL.
+func InvalidateCloudFrontDistribution(creds *AWSCredentials, distributionID string) error {
+	cfg, err := creds.getAWSConfig(context.TODO())
+	if err != nil {
+		return fmt.Errorf("error al cargar configuración de AWS: %w", err)
+	}
+
+	client := cloudfront.NewFromConfig(cfg)
+
+	callerReference := uuid.New().String()
+	input := &cloudfront.CreateInvalidationInput{
+		DistributionId: aws.String(distributionID),
+		InvalidationBatch: &cloudfronttypes.InvalidationBatch{
+			CallerReference: aws.String(callerReference),
+			Paths: &cloudfronttypes.Paths{
+				Quantity: aws.Int32(1),
+				Items:    []string{"/*"},
+			},
+		},
+	}
+
+	_, err = client.CreateInvalidation(context.TODO(), input)
+	if err != nil {
+		return fmt.Errorf("error creating CloudFront invalidation for distribution '%s': %w", distributionID, err)
+	}
+
+	return nil
 }

@@ -42,6 +42,8 @@ func TestDownloadFunctionsRouteToDownloadSource(t *testing.T) {
 		{name: "task trigger", call: DownloadTaskTriggerSource, expectedURL: titvoTaskTriggerSource, expectedTarget: "task trigger"},
 		{name: "task status", call: DownloadTaskStatusSource, expectedURL: titvoTaskStatusSource, expectedTarget: "task status"},
 		{name: "ecr publisher", call: DownloadInstallerECRPublisherSource, expectedURL: titvoInstallerECRPublisherSource, expectedTarget: "installer ecr publisher"},
+		{name: "admin bff", call: DownloadAdminBffSource, expectedURL: titvoAdminBffSource, expectedTarget: "admin bff"},
+		{name: "admin web", call: DownloadAdminWebSource, expectedURL: titvoAdminWebSource, expectedTarget: "admin web"},
 	}
 
 	for _, tc := range tests {

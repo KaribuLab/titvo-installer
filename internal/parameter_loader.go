@@ -16,6 +16,12 @@ type SecretLoaderCredentials struct {
 	AWSSecretAccessKey string `json:"aws_secret_access_key"`
 	AWSSessionToken    string `json:"aws_session_token"`
 	AWSRegion          string `json:"aws_region"`
+	// AdminEmail and AdminPassword are optional and only consumed by
+	// RunAdminSeeder (see admin_seeder.go) — the same --config file used
+	// for AWS credentials may also carry them, as a non-interactive
+	// alternative to prompting.
+	AdminEmail    string `json:"admin_email,omitempty"`
+	AdminPassword string `json:"admin_password,omitempty"`
 }
 
 // SecretLoaderConfig contiene la configuración completa para el secret loader

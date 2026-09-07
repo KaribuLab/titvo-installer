@@ -20,6 +20,10 @@ type moduleState struct {
 	Applied    bool   `json:"applied,omitempty"`
 	Submitted  bool   `json:"submitted,omitempty"`
 	Destroyed  bool   `json:"destroyed,omitempty"`
+	// Synced tracks whether a static site's build output has already been
+	// uploaded to S3 and its CloudFront distribution invalidated (see
+	// deployStaticSiteComponent). Only used by static-site modules.
+	Synced bool `json:"synced,omitempty"`
 }
 
 // resetDownstream clears build and deploy flags so a refreshed clone is
@@ -30,6 +34,7 @@ func (m *moduleState) resetDownstream() {
 	m.Applied = false
 	m.Submitted = false
 	m.Destroyed = false
+	m.Synced = false
 }
 
 // installState is the persisted progress of an installation run. It lives in

@@ -1,6 +1,6 @@
 module github.com/KaribuLab/titvo-installer
 
-go 1.24.6
+go 1.25.0
 
 require (
 	github.com/spf13/cobra v1.9.1
@@ -11,7 +11,18 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/batch v1.57.6
 	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.39.1
 	github.com/google/uuid v1.6.0
-	golang.org/x/term v0.34.0
+	golang.org/x/term v0.45.0
+)
+
+require golang.org/x/crypto v0.55.0
+
+require (
+	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.18 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/v4a v1.4.38 // indirect
+	github.com/aws/aws-sdk-go-v2/service/cloudfront v1.67.6 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.9.30 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.19.38 // indirect
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.107.2 // indirect
 )
 
 require (
@@ -25,24 +36,24 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.50.3
 	github.com/aws/aws-sdk-go-v2/service/dynamodbstreams v1.30.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/endpoint-discovery v1.11.7 // indirect
-	golang.org/x/sys v0.35.0 // indirect
+	golang.org/x/sys v0.47.0 // indirect
 )
 
 require (
-	github.com/aws/aws-sdk-go-v2 v1.39.0
+	github.com/aws/aws-sdk-go-v2 v1.43.6
 	github.com/aws/aws-sdk-go-v2/config v1.31.4
 	github.com/aws/aws-sdk-go-v2/credentials v1.18.8
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.18.5 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.7 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.7 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.37 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.37 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/ini v1.8.3 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.1 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.5 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.17 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.37 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssm v1.64.1
 	github.com/aws/aws-sdk-go-v2/service/sso v1.28.3 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.34.1 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.38.1
-	github.com/aws/smithy-go v1.23.0 // indirect
+	github.com/aws/smithy-go v1.27.8 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/spf13/pflag v1.0.6 // indirect
 	github.com/stretchr/testify v1.10.0 // indirect
